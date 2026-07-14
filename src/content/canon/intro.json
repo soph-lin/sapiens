@@ -1,0 +1,382 @@
+{
+  "start": "wake-1",
+  "nodes": {
+    "wake-1": {
+      "type": "text",
+      "id": "wake-1",
+      "text": "you wake in a narrow room of soft shadows, wrapped in a quiet that feels older than sleep. the walls curve around you, close and smooth, holding the faint warmth of your body. a small light trembles overhead. somewhere beneath the floor, something hums.",
+      "next": "awake"
+    },
+    "awake": {
+      "type": "choice",
+      "id": "awake",
+      "prompt": "you're awake now. what do you do?",
+      "choices": [
+        {
+          "label": "keep laying in bed",
+          "next": "lay"
+        },
+        {
+          "label": "get up",
+          "next": "wake-2"
+        }
+      ]
+    },
+    "lay": {
+      "type": "text",
+      "id": "lay",
+      "text": "you look at the ceiling fan run.",
+      "next": "awake"
+    },
+    "wake-2": {
+      "type": "text",
+      "id": "wake-2",
+      "text": "you rise and step into the passage beyond. it is dim and weightless, filled with the scent of metal, dust, and distant rain. doors wait along the walls, their surfaces unmarked. ahead, a pale opening spills strange blue light across the floor.",
+      "next": "wake-3"
+    },
+    "wake-3": {
+      "type": "text",
+      "id": "wake-3",
+      "text": "you follow it outside.",
+      "next": "wake-4"
+    },
+    "wake-4": {
+      "type": "text",
+      "id": "wake-4",
+      "text": "the world opens around you, vast and soundless. dark ground stretches beneath a sky crowded with unfamiliar stars. behind you, the place where you woke rests in the silence, its shape almost lost among the shadows.",
+      "next": "wake-5"
+    },
+    "wake-5": {
+      "type": "text",
+      "id": "wake-5",
+      "text": "every vessel leaves a pale wake of a memory trembling in its path. every awakening opens a horizon that was not there before.",
+      "next": "wake-6"
+    },
+    "wake-6": {
+      "type": "text",
+      "id": "wake-6",
+      "text": "the only way to move forwards is to first look back.",
+      "next": "ship-1"
+    },
+    "ship-1": {
+      "type": "text",
+      "id": "ship-1",
+      "text": "you spot a small figure out the corner of your eye. it has a round glass face with blinking LEDs and a bouncing tail.",
+      "next": "ship-2"
+    },
+    "ship-2": {
+      "type": "text",
+      "id": "ship-2",
+      "speaker": "coco",
+      "text": "there you are!",
+      "next": "ship-3"
+    },
+    "ship-3": {
+      "type": "text",
+      "id": "ship-3",
+      "speaker": "coco",
+      "text": "i was beginning to worry.",
+      "next": "ship-4"
+    },
+    "ship-4": {
+      "type": "text",
+      "id": "ship-4",
+      "speaker": "coco",
+      "text": "not because i thought you were broken.",
+      "next": "ship-5"
+    },
+    "ship-5": {
+      "type": "text",
+      "id": "ship-5",
+      "speaker": "coco",
+      "text": "i worried you might wake up remembering everything.",
+      "next": "ship-6"
+    },
+    "ship-6": {
+      "type": "text",
+      "id": "ship-6",
+      "speaker": "coco",
+      "text": "that would have made things much more difficult.",
+      "next": "ship-7"
+    },
+    "ship-7": {
+      "type": "choice",
+      "id": "ship-7",
+      "prompt": "how are you doing so far?",
+      "choices": [
+        {
+          "label": "good!!",
+          "next": "ship-8"
+        },
+        {
+          "label": "bad",
+          "next": "ship-9"
+        },
+        {
+          "label": "idk, i just woke up",
+          "next": "ship-10"
+        }
+      ]
+    },
+    "ship-8": {
+      "type": "text",
+      "id": "ship-8",
+      "speaker": "coco",
+      "text": "i'm glad it's going well for you!",
+      "next": "ship-11"
+    },
+    "ship-9": {
+      "type": "text",
+      "id": "ship-9",
+      "speaker": "coco",
+      "text": "oh no, i'm sorry to hear that. but hopefully it'll get better as the day goes on!",
+      "next": "ship-11"
+    },
+    "ship-10": {
+      "type": "text",
+      "id": "ship-10",
+      "speaker": "coco",
+      "text": "that's fair. it's a lot to process, huh?",
+      "next": "ship-11"
+    },
+    "ship-11": {
+      "type": "text",
+      "id": "ship-11",
+      "speaker": "coco",
+      "text": "anyways, we're still getting things ready, so you won't have much to do today. but i'm here if you get bored!",
+      "next": "ship-12"
+    },
+    "ship-12": {
+      "type": "text",
+      "id": "ship-12",
+      "speaker": "coco",
+      "text": "i can tell you a story, show you around, answer your questions, play a game, or help you explore.",
+      "next": "ship-13"
+    },
+    "ship-13": {
+      "type": "choice",
+      "id": "ship-13",
+      "prompt": "what do you want to do?",
+      "next": "bedtime-1",
+      "choices": [
+        {
+          "label": "show me around",
+          "next": "escort-1",
+          "condition": {
+            "variable": "flags.done_escort",
+            "operator": "==",
+            "value": false
+          }
+        },
+        {
+          "label": "play a game",
+          "next": "play-1",
+          "condition": {
+            "variable": "flags.done_play",
+            "operator": "==",
+            "value": false
+          }
+        },
+        {
+          "label": "watch tv",
+          "next": "tv-1",
+          "condition": {
+            "variable": "flags.done_tv",
+            "operator": "==",
+            "value": false
+          }
+        },
+        {
+          "label": "nah, i'm good",
+          "next": "survey-1",
+          "condition": {
+            "variable": "flags.done_survey",
+            "operator": "==",
+            "value": false
+          }
+        }
+      ]
+    },
+    "escort-1": {
+      "type": "text",
+      "id": "escort-1",
+      "speaker": "coco",
+      "text": "of course! there's not much to see yet, but i know all the interesting places.",
+      "next": "escort-2"
+    },
+    "escort-2": {
+      "type": "text",
+      "id": "escort-2",
+      "speaker": "coco",
+      "text": "come on — stay close. some of the corridors still rearrange themselves when nobody's looking.",
+      "next": "escort-3"
+    },
+    "escort-3": {
+      "type": "text",
+      "id": "escort-3",
+      "text": "coco bounces ahead into the dim hall, tail flickering like a lantern. you follow the soft glow of its LEDs into the quiet.",
+      "next": "escort-done"
+    },
+    "escort-done": {
+      "type": "set",
+      "id": "escort-done",
+      "effects": [
+        { "variable": "flags.done_escort", "operation": "set", "value": true }
+      ],
+      "next": "ship-13"
+    },
+    "play-1": {
+      "type": "text",
+      "id": "play-1",
+      "speaker": "coco",
+      "text": "excellent choice. i have several games installed, although some of them may be slightly dangerous.",
+      "next": "play-2"
+    },
+    "play-2": {
+      "type": "text",
+      "id": "play-2",
+      "text": "coco has a serious look. its glass face goes still, LEDs cooling to a hard flat glow, and the bouncing tail freezes mid-air.",
+      "next": "play-3"
+    },
+    "play-3": {
+      "type": "text",
+      "id": "play-3",
+      "speaker": "coco",
+      "text": "just kidding, hehe!",
+      "next": "play-done"
+    },
+    "play-done": {
+      "type": "set",
+      "id": "play-done",
+      "effects": [
+        { "variable": "flags.done_play", "operation": "set", "value": true }
+      ],
+      "next": "ship-13"
+    },
+    "tv-1": {
+      "type": "text",
+      "id": "tv-1",
+      "speaker": "coco",
+      "text": "coming right up! i hope you like old recordings and programs with questionable educational value.",
+      "next": "tv-2"
+    },
+    "tv-2": {
+      "type": "text",
+      "id": "tv-2",
+      "speaker": "coco",
+      "text": "i'll pull up something soft and grainy. nothing too exciting for your first day.",
+      "next": "tv-3"
+    },
+    "tv-3": {
+      "type": "text",
+      "id": "tv-3",
+      "text": "a pale screen wakes on the far wall. static snow settles into half-forgotten maps, chalkboards, and voices that sound like they were recorded underwater.",
+      "next": "tv-done"
+    },
+    "tv-done": {
+      "type": "set",
+      "id": "tv-done",
+      "effects": [
+        { "variable": "flags.done_tv", "operation": "set", "value": true }
+      ],
+      "next": "ship-13"
+    },
+    "survey-1": {
+      "type": "text",
+      "id": "survey-1",
+      "text": "you hang back and watch. the room breathes quietly around you — metal seams, distant hum, the small light trembling overhead.",
+      "next": "survey-2"
+    },
+    "survey-2": {
+      "type": "text",
+      "id": "survey-2",
+      "text": "coco waits a beat, then drifts a respectful distance away, LEDs dimming to a patient pulse.",
+      "next": "survey-3"
+    },
+    "survey-3": {
+      "type": "text",
+      "id": "survey-3",
+      "text": "outside the viewport, unfamiliar stars hang still. for now, looking is enough.",
+      "next": "survey-done"
+    },
+    "survey-done": {
+      "type": "set",
+      "id": "survey-done",
+      "effects": [
+        { "variable": "flags.done_survey", "operation": "set", "value": true }
+      ],
+      "next": "ship-13"
+    },
+    "bedtime-1": {
+      "type": "text",
+      "id": "bedtime-1",
+      "speaker": "coco",
+      "text": "wow, what a fun day!",
+      "next": "bedtime-2"
+    },
+    "bedtime-2": {
+      "type": "text",
+      "id": "bedtime-2",
+      "speaker": "coco",
+      "text": "phew. i'm getting sleepy.",
+      "next": "bedtime-3"
+    },
+    "bedtime-3": {
+      "type": "text",
+      "id": "bedtime-3",
+      "text": "you nod, feeling the same heaviness settle behind your eyes.",
+      "next": "bedtime-4"
+    },
+    "bedtime-4": {
+      "type": "text",
+      "id": "bedtime-4",
+      "text": "coco takes your hand with its tail and escorts you back to your sleeping quarters. its metal tail is warm against your hand.",
+      "next": "bedtime-5"
+    },
+    "bedtime-5": {
+      "type": "text",
+      "id": "bedtime-5",
+      "speaker": "coco",
+      "text": "good night!",
+      "next": "bedtime-6"
+    },
+    "bedtime-6": {
+      "type": "text",
+      "id": "bedtime-6",
+      "text": "you tug on coco's tail, not ready to let go.",
+      "next": "bedtime-7"
+    },
+    "bedtime-7": {
+      "type": "text",
+      "id": "bedtime-7",
+      "speaker": "you",
+      "text": "tell me a story.",
+      "next": "bedtime-8"
+    },
+    "bedtime-8": {
+      "type": "text",
+      "id": "bedtime-8",
+      "text": "a look flashes in coco's eyes. it does not respond. it stays perfectly still, the quiet hum beneath its metal frame filling the room.",
+      "next": "bedtime-9"
+    },
+    "bedtime-9": {
+      "type": "text",
+      "id": "bedtime-9",
+      "speaker": "coco",
+      "text": "alright then.",
+      "next": "bedtime-10"
+    },
+    "bedtime-10": {
+      "type": "text",
+      "id": "bedtime-10",
+      "speaker": "coco",
+      "text": "once upon a time...",
+      "next": "bedtime-11"
+    },
+    "bedtime-11": {
+      "type": "text",
+      "id": "bedtime-11",
+      "text": "your eyes drift shut, and you fall asleep."
+    }
+  }
+}

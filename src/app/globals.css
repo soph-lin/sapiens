@@ -13,6 +13,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-playfair-display), "Times New Roman", serif;
+  --font-mono: var(--font-space-mono), ui-monospace, monospace;
 }
 
 body {
@@ -23,6 +24,10 @@ body {
 
 .font-display {
   font-family: var(--font-display);
+}
+
+.font-space {
+  font-family: var(--font-mono);
 }
 
 @keyframes choice-cascade {
