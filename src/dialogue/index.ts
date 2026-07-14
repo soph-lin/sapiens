@@ -13,7 +13,11 @@ export type {
   PresentableEnd,
   PresentableText,
   SetNode,
+  StatKey,
   State,
   Story,
+  StoryMetadata,
   TextNode,
+  VoyageStats,
 } from "./types";
+export { STAT_KEYS } from "./types";

@@ -1,8 +1,30 @@
-export type State = {
+export type StatKey = "reputation" | "evidence" | "safety";
+
+export const STAT_KEYS: StatKey[] = ["reputation", "evidence", "safety"];
+
+export type VoyageStats = {
   reputation: number;
   safety: number;
   evidence: number;
+};
+
+/**
+ * Dialogue runtime state. Voyage meters (`reputation` / `evidence` / `safety`)
+ * are only present when the story opts in via `metadata.stats: true`.
+ */
+export type State = {
   flags: Record<string, boolean>;
+  reputation?: number;
+  safety?: number;
+  evidence?: number;
+};
+
+export type StoryMetadata = {
+  /**
+   * When true, track reputation / evidence / safety.
+   * Omitted or false: flags only (canon / framing dialogue).
+   */
+  stats?: boolean;
 };
 
 export type Effect = {
@@ -38,6 +60,8 @@ export type ChoiceNode = {
   id: string;
   prompt?: string;
   choices: Choice[];
+  /** When every choice is hidden by conditions, continue here. */
+  next?: string;
 };
 
 export type SetNode = {
@@ -59,6 +83,7 @@ export type Node = TextNode | ChoiceNode | SetNode | EndNode;
 export type Story = {
   start: string;
   nodes: Record<string, Node>;
+  metadata?: StoryMetadata;
 };
 
 export type PresentableChoice = {
@@ -87,6 +112,7 @@ export type PresentableEnd = {
   title: string;
   text: string;
   state: State;
+  showStats: boolean;
 };
 
 export type Presentable =

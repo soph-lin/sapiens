@@ -7,6 +7,7 @@ import type {
   Node,
   SetNode,
   Story,
+  StoryMetadata,
   TextNode,
 } from "./types";
 
@@ -117,6 +118,8 @@ function validateChoiceNode(
   };
   const prompt = assertOptionalString(raw.prompt, `nodes.${id}.prompt`);
   if (prompt) node.prompt = prompt;
+  const next = assertOptionalString(raw.next, `nodes.${id}.next`);
+  if (next) node.next = next;
   return node;
 }
 
@@ -153,6 +156,20 @@ function validateNode(raw: unknown, id: string): Node {
   throw new Error(`nodes.${id}.type must be text | choice | set | end`);
 }
 
+function validateMetadata(raw: unknown): StoryMetadata | undefined {
+  if (raw === undefined) return undefined;
+  if (!isRecord(raw)) throw new Error("metadata must be an object");
+
+  const metadata: StoryMetadata = {};
+  if (raw.stats !== undefined) {
+    if (typeof raw.stats !== "boolean") {
+      throw new Error("metadata.stats must be a boolean");
+    }
+    metadata.stats = raw.stats;
+  }
+  return metadata;
+}
+
 /** Validate story data and return a typed Story. Throws on invalid shape. */
 export function validateStory(raw: unknown): Story {
   if (!isRecord(raw)) throw new Error("Story must be an object");
@@ -181,6 +198,9 @@ export function validateStory(raw: unknown): Story {
       throw new Error(`nodes.${node.id}.next "${node.next}" is missing`);
     }
     if (node.type === "choice") {
+      if (node.next && !(node.next in nodes)) {
+        throw new Error(`nodes.${node.id}.next "${node.next}" is missing`);
+      }
       for (const [i, choice] of node.choices.entries()) {
         if (!(choice.next in nodes)) {
           throw new Error(
@@ -191,5 +211,8 @@ export function validateStory(raw: unknown): Story {
     }
   }
 
-  return { start, nodes };
+  const metadata = validateMetadata(raw.metadata);
+  const story: Story = { start, nodes };
+  if (metadata) story.metadata = metadata;
+  return story;
 }

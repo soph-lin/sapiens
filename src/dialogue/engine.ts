@@ -5,30 +5,60 @@ import type {
   Presentable,
   PresentableChoice,
   State,
+  StatKey,
   Story,
+  StoryMetadata,
 } from "./types";
+import { STAT_KEYS } from "./types";
 import { validateStory } from "./validate";
 
-const DEFAULT_STATE: State = {
+const DEFAULT_STATS: Record<StatKey, number> = {
   reputation: 0,
   safety: 50,
   evidence: 0,
-  flags: {},
 };
 
-function cloneState(state: State): State {
-  return {
-    reputation: state.reputation,
-    safety: state.safety,
-    evidence: state.evidence,
-    flags: { ...state.flags },
+function storyTracksStats(metadata?: StoryMetadata): boolean {
+  return metadata?.stats === true;
+}
+
+function createState(
+  tracksStats: boolean,
+  initialState: Partial<State> = {},
+): State {
+  const state: State = {
+    flags: { ...(initialState.flags ?? {}) },
   };
+  if (tracksStats) {
+    for (const key of STAT_KEYS) {
+      state[key] = initialState[key] ?? DEFAULT_STATS[key];
+    }
+  }
+  return state;
+}
+
+function cloneState(state: State): State {
+  const next: State = { flags: { ...state.flags } };
+  for (const key of STAT_KEYS) {
+    if (state[key] !== undefined) next[key] = state[key];
+  }
+  return next;
+}
+
+function isStatKey(variable: string): variable is StatKey {
+  return (STAT_KEYS as string[]).includes(variable);
 }
 
 function readVariable(state: State, variable: string): number | boolean {
-  if (variable === "reputation") return state.reputation;
-  if (variable === "safety") return state.safety;
-  if (variable === "evidence") return state.evidence;
+  if (isStatKey(variable)) {
+    const value = state[variable];
+    if (value === undefined) {
+      throw new Error(
+        `Variable "${variable}" requires metadata.stats: true on this story`,
+      );
+    }
+    return value;
+  }
   if (variable.startsWith("flags.")) {
     const key = variable.slice("flags.".length);
     return state.flags[key] ?? false;
@@ -41,7 +71,12 @@ function writeVariable(
   variable: string,
   value: number | boolean,
 ): void {
-  if (variable === "reputation" || variable === "safety" || variable === "evidence") {
+  if (isStatKey(variable)) {
+    if (state[variable] === undefined) {
+      throw new Error(
+        `Variable "${variable}" requires metadata.stats: true on this story`,
+      );
+    }
     if (typeof value !== "number") {
       throw new Error(`Variable "${variable}" expects a number`);
     }
@@ -117,26 +152,25 @@ function conditionPasses(state: State, condition?: Condition): boolean {
 
 export class DialogueEngine {
   private readonly story: Story;
+  private readonly tracksStats: boolean;
   private state: State;
   private currentId: string;
   private ended = false;
 
   constructor(rawStory: unknown, initialState: Partial<State> = {}) {
     this.story = validateStory(rawStory);
-    this.state = {
-      ...cloneState(DEFAULT_STATE),
-      ...initialState,
-      flags: {
-        ...DEFAULT_STATE.flags,
-        ...(initialState.flags ?? {}),
-      },
-    };
+    this.tracksStats = storyTracksStats(this.story.metadata);
+    this.state = createState(this.tracksStats, initialState);
     this.currentId = this.story.start;
     this.resolveToPresentable();
   }
 
   getState(): State {
     return cloneState(this.state);
+  }
+
+  hasStats(): boolean {
+    return this.tracksStats;
   }
 
   isEnded(): boolean {
@@ -237,6 +271,10 @@ export class DialogueEngine {
       if (node.type === "choice") {
         const visible = this.visibleChoices(node);
         if (visible.length === 0) {
+          if (node.next) {
+            this.currentId = node.next;
+            continue;
+          }
           throw new Error(`Choice node "${node.id}" has no available choices`);
         }
         return;
@@ -277,6 +315,7 @@ export class DialogueEngine {
         title: interpolate(node.title, this.state),
         text: interpolate(node.text, this.state),
         state: this.getState(),
+        showStats: this.tracksStats,
       };
     }
 
