@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# sapiens
 
-## Getting Started
+experience humanity. the only way to move forwards is to look back
 
-First, run the development server:
+## dev
+
+### install pnpm (if you don't already have it)
+
+`pnpm` is a package manager built on top of npm and is much faster than npm, being highly disk efficient and solving inherent issues in npm.
+
+install `pnpm` if you don't already have it:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install -g pnpm
+optional: set up a shorter alias like pn instead
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+for POSIX systems, add the following to your `.bashrc`, `.zshrc`, or `config.fish`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+alias pn=pnpm
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+for Powershell (Windows), go to a Powershell window with admin rights and run:
 
-## Learn More
+```bash
+notepad $profile.AllUsersAllHosts
+```
 
-To learn more about Next.js, take a look at the following resources:
+in the profile.ps1 file that opens, put:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+set-alias -name pn -value pnpm
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+now whenever you have to run a `pnpm` cmd, you can type in `pn` (or whatever alias you created) instead.
 
-## Deploy on Vercel
+### run
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+pnpm dev
+```
