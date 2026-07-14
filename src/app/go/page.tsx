@@ -1,5 +1,5 @@
 import { GRIFFIN_WHARF_ART } from "@/lib/content/art/griffin-wharf";
-import bostonTeaParty from "@/content/voyages/boston-tea-party.json";
+import bostonTeaParty from "@/lib/content/voyages/boston-tea-party.json";
 import { DialoguePanel } from "@/app/components/dialogue";
 
 export default function GoPage() {

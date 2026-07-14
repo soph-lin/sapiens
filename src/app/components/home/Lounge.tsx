@@ -8,7 +8,7 @@ import {
   useDialogueSession,
 } from "@/app/components/dialogue";
 import HomeBackground from "@/app/components/home/HomeBackground";
-import intro from "@/content/canon/intro.json";
+import intro from "@/lib/content/canon/intro.json";
 
 const theme = THEMES.space;
 
