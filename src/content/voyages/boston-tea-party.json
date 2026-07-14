@@ -1,0 +1,169 @@
+{
+  "metadata": {
+    "stats": true
+  },
+  "start": "harbor",
+  "nodes": {
+    "harbor": {
+      "type": "text",
+      "id": "harbor",
+      "speaker": "Harbor night — December 16, 1773",
+      "text": "Three East India Company ships sit unmoved in Boston Harbor. Their holds are packed with taxed tea. Crowds thicken along Griffin’s Wharf. You are a journeyman printer with ink on your cuffs and a choice forming in your chest.",
+      "next": "approach"
+    },
+    "approach": {
+      "type": "choice",
+      "id": "approach",
+      "prompt": "What do you do first?",
+      "choices": [
+        {
+          "label": "Slip into the Sons of Liberty meeting above the print shop",
+          "next": "meeting",
+          "effects": [
+            { "variable": "reputation", "operation": "add", "value": 1 },
+            { "variable": "flags.joined_circle", "operation": "set", "value": true }
+          ]
+        },
+        {
+          "label": "Stay on the wharf and listen—watch faces, weigh risks",
+          "next": "wharf",
+          "effects": [
+            { "variable": "safety", "operation": "add", "value": 5 },
+            { "variable": "evidence", "operation": "add", "value": 1 }
+          ]
+        },
+        {
+          "label": "Warn a merchant friend the night will turn violent",
+          "next": "warn",
+          "effects": [
+            { "variable": "reputation", "operation": "subtract", "value": 1 },
+            { "variable": "safety", "operation": "add", "value": 10 },
+            { "variable": "flags.warned_merchant", "operation": "set", "value": true }
+          ]
+        }
+      ]
+    },
+    "meeting": {
+      "type": "text",
+      "id": "meeting",
+      "speaker": "Upper room",
+      "text": "Candle smoke. Whispered votes. Someone hands you a blanket and soot for your face. “Not as Mohawks,” a voice murmurs, “as colonists who refuse a monopoly dressed as law.” Your name means more in this room now—reputation {reputation}.",
+      "next": "plan"
+    },
+    "wharf": {
+      "type": "text",
+      "id": "wharf",
+      "speaker": "Griffin’s Wharf",
+      "text": "You hear the numbers: ninety-two thousand pounds of tea. You hear the temper: no one will pay the duty, and no ship may unload. A customs officer stares past you like a man already rehearsing his report. Evidence of resolve: {evidence}.",
+      "next": "plan"
+    },
+    "warn": {
+      "type": "text",
+      "id": "warn",
+      "speaker": "Counting house",
+      "text": "Your friend pales, then nods. “I will not stand with them,” he says, “but I will not stand against you either.” You leave lighter on risk—safety {safety}—and heavier with a debt you cannot print.",
+      "next": "plan"
+    },
+    "plan": {
+      "type": "text",
+      "id": "plan",
+      "speaker": "Near midnight",
+      "text": "Word races through alleys: board the Dartmouth, Eleanor, and Beaver. Break open the chests. Pour the tea into the tide. No theft of cargo meant for profit—only destruction of the taxed goods.",
+      "next": "board"
+    },
+    "board": {
+      "type": "choice",
+      "id": "board",
+      "prompt": "The gangplank creaks. What is your part?",
+      "choices": [
+        {
+          "label": "Swing an axe into the chests yourself",
+          "next": "pouring",
+          "effects": [
+            { "variable": "reputation", "operation": "add", "value": 2 },
+            { "variable": "safety", "operation": "subtract", "value": 15 },
+            { "variable": "flags.axe_hand", "operation": "set", "value": true }
+          ]
+        },
+        {
+          "label": "Haul and tip chests overboard—steady, unnoticed",
+          "next": "pouring",
+          "effects": [
+            { "variable": "evidence", "operation": "add", "value": 1 },
+            { "variable": "safety", "operation": "subtract", "value": 5 }
+          ]
+        },
+        {
+          "label": "Keep lookout for redcoats from the shadowed rail",
+          "next": "pouring",
+          "effects": [
+            { "variable": "safety", "operation": "add", "value": 5 },
+            { "variable": "flags.lookout", "operation": "set", "value": true }
+          ]
+        }
+      ]
+    },
+    "pouring": {
+      "type": "text",
+      "id": "pouring",
+      "speaker": "On the hold",
+      "text": "Wood splits. Leaves darken the black water. Chests splash and vanish. Some cheer under their breath; others work in silence. Salt spray meets ink-stained hands. The harbor tastes of tea.",
+      "next": "aftermath_gate"
+    },
+    "aftermath_gate": {
+      "type": "set",
+      "id": "aftermath_gate",
+      "effects": [
+        { "variable": "evidence", "operation": "add", "value": 1 }
+      ],
+      "next": "aftermath"
+    },
+    "aftermath": {
+      "type": "choice",
+      "id": "aftermath",
+      "prompt": "Dawn approaches. One last decision before the city wakes.",
+      "choices": [
+        {
+          "label": "Print a handbill naming the duty—not the men",
+          "next": "end_press",
+          "effects": [
+            { "variable": "reputation", "operation": "add", "value": 1 },
+            { "variable": "evidence", "operation": "add", "value": 1 }
+          ]
+        },
+        {
+          "label": "Wash the soot and speak of it to no one",
+          "next": "end_quiet",
+          "effects": [
+            { "variable": "safety", "operation": "add", "value": 10 }
+          ]
+        },
+        {
+          "label": "Confess involvement only if evidence favors the cause",
+          "next": "end_press",
+          "condition": {
+            "variable": "evidence",
+            "operator": ">=",
+            "value": 2
+          },
+          "effects": [
+            { "variable": "reputation", "operation": "add", "value": 2 },
+            { "variable": "safety", "operation": "subtract", "value": 10 }
+          ]
+        }
+      ]
+    },
+    "end_press": {
+      "type": "end",
+      "id": "end_press",
+      "title": "Ink and tide",
+      "text": "By morning, Boston knows the tea is gone. Your press smells of wet ink and harbor brine. Parliament will answer with close ports and hard laws—the road toward revolution lengthens. You leave with reputation {reputation}, evidence {evidence}, safety {safety}."
+    },
+    "end_quiet": {
+      "type": "end",
+      "id": "end_quiet",
+      "title": "Silent water",
+      "text": "You keep your name from the street songs. The destroyed tea still remakes the colonies’ quarrel with the Crown. History will remember the night; your small part stays folded in hush—reputation {reputation}, evidence {evidence}, safety {safety}."
+    }
+  }
+}
