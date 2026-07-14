@@ -1,24 +1,24 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Hearts, Snoring } from "./effects";
 import {
   COCO_CX,
   COCO_CY,
+  COCO_IDLE_PITCH,
+  COCO_IDLE_ROLL,
+  COCO_IDLE_YAW,
   COCO_REST_PITCH,
   COCO_REST_ROLL,
   COCO_REST_YAW,
   COCO_SCALE,
 } from "./placement";
 
-type Particle = {
-  homeX: number;
-  homeY: number;
-  shade: number;
-  size: number;
-  phase: number;
-  speed: number;
-  amp: number;
-};
+/** Rub travel (px) + hold time before idle → happy */
+const RUB_TRAVEL = 90;
+const RUB_HOLD_MS = 650;
+/** Stay happy briefly after releasing the rub */
+const HAPPY_LINGER_MS = 1800;
 
 type Kind = "body" | "eye" | "mouth" | "blush" | "ear" | "tail";
 
@@ -51,8 +51,14 @@ const RIGHT_EYE_X = 0.2;
 const TAIL_SPEED = 2.05;
 
 /** Body/ear idle squish — vertical breathe */
-const SQUISH_SPEED = 1.15;
-const SQUISH_AMOUNT = 0.045;
+const EAR_SQUISH_SPEED = 1.15;
+const EAR_SQUISH_AMOUNT = 0.045;
+
+/** Talking */
+const TALK_SQUISH_SPEED = 15;
+const TALK_SQUISH_AMOUNT = 0.055;
+const TALK_BOB_AMP = 0.028;
+const TALK_OUT_MUL = 0.75; // stronger X/Z spread than idle's 0.55
 
 function distToSeg(
   px: number,
@@ -70,6 +76,45 @@ function distToSeg(
   return Math.hypot(px - (ax + abx * t), py - (ay + aby * t));
 }
 
+export type CocoExpression = "sleeping" | "idle" | "happy" | "talking";
+
+function restPose(expression: CocoExpression) {
+  if (
+    expression === "idle" ||
+    expression === "happy" ||
+    expression === "talking"
+  ) {
+    return {
+      yaw: COCO_IDLE_YAW,
+      pitch: COCO_IDLE_PITCH,
+      roll: COCO_IDLE_ROLL,
+    };
+  }
+  return {
+    yaw: COCO_REST_YAW,
+    pitch: COCO_REST_PITCH,
+    roll: COCO_REST_ROLL,
+  };
+}
+
+function squishMotion(expression: CocoExpression) {
+  if (expression === "talking") {
+    return {
+      speed: TALK_SQUISH_SPEED,
+      amount: TALK_SQUISH_AMOUNT,
+      bob: TALK_BOB_AMP,
+      outMul: TALK_OUT_MUL,
+    };
+  }
+  return {
+    speed: EAR_SQUISH_SPEED,
+    amount: EAR_SQUISH_AMOUNT,
+    bob: 0,
+    outMul: 0.55,
+  };
+}
+
+/** Closed caret eyes — ˅˅ (sleeping) */
 function eyeCaretDist(x: number, y: number, cx: number, cy: number) {
   const half = 0.045;
   const tipX = cx;
@@ -77,6 +122,39 @@ function eyeCaretDist(x: number, y: number, cx: number, cy: number) {
   const left = distToSeg(x, y, cx - half, cy - half * 0.35, tipX, tipY);
   const right = distToSeg(x, y, cx + half, cy - half * 0.35, tipX, tipY);
   return Math.min(left, right);
+}
+
+/** Open dot eyes — ˙˙ (idle) */
+function eyeDotDist(x: number, y: number, cx: number, cy: number) {
+  return Math.hypot(x - cx, y - cy);
+}
+
+/**
+ * Happy arc eyes — ◝ ◜ (upper quadrant arcs).
+ * Face y increases downward.
+ */
+function eyeHappyArcDist(
+  x: number,
+  y: number,
+  cx: number,
+  cy: number,
+  side: "left" | "right",
+) {
+  const r = 0.036;
+  const dx = x - cx;
+  const dy = y - cy;
+  const ang = Math.atan2(dy, dx); // 0 = right, −π/2 = up
+  // ◝ left eye: upper-right; ◜ right eye: upper-left
+  const a0 = side === "left" ? -Math.PI / 2 : -Math.PI;
+  const a1 = side === "left" ? 0 : -Math.PI / 2;
+  const radial = Math.hypot(dx, dy);
+  if (ang >= a0 && ang <= a1) return Math.abs(radial - r);
+
+  const e0x = cx + Math.cos(a0) * r;
+  const e0y = cy + Math.sin(a0) * r;
+  const e1x = cx + Math.cos(a1) * r;
+  const e1y = cy + Math.sin(a1) * r;
+  return Math.min(Math.hypot(x - e0x, y - e0y), Math.hypot(x - e1x, y - e1y));
 }
 
 function mouthDist(x: number, y: number) {
@@ -95,13 +173,31 @@ function blushDist(x: number, y: number, cx: number, cy: number) {
   return Math.hypot(dx, dy);
 }
 
-function faceKind(x: number, y: number): Kind | null {
-  if (
+function eyesMatch(x: number, y: number, expression: CocoExpression): boolean {
+  if (expression === "idle" || expression === "talking") {
+    return (
+      eyeDotDist(x, y, LEFT_EYE_X, FACE_Y) < 0.026 ||
+      eyeDotDist(x, y, RIGHT_EYE_X, FACE_Y) < 0.026
+    );
+  }
+  if (expression === "happy") {
+    return (
+      eyeHappyArcDist(x, y, LEFT_EYE_X, FACE_Y, "left") < 0.014 ||
+      eyeHappyArcDist(x, y, RIGHT_EYE_X, FACE_Y, "right") < 0.014
+    );
+  }
+  return (
     eyeCaretDist(x, y, LEFT_EYE_X, FACE_Y) < 0.015 ||
     eyeCaretDist(x, y, RIGHT_EYE_X, FACE_Y) < 0.015
-  ) {
-    return "eye";
-  }
+  );
+}
+
+function faceKind(
+  x: number,
+  y: number,
+  expression: CocoExpression,
+): Kind | null {
+  if (eyesMatch(x, y, expression)) return "eye";
   if (mouthDist(x, y) < 0.015) return "mouth";
   if (
     blushDist(x, y, -0.22, FACE_Y + 0.05) < 0.8 ||
@@ -154,9 +250,11 @@ function addSphereShell(
     /** Flatten along Z (1 = sphere, lower = flatter disk) */
     flatZ?: number;
     earSide?: -1 | 1;
+    expression?: CocoExpression;
   },
 ) {
   const flatZ = opts?.flatZ ?? 1;
+  const expression = opts?.expression ?? "sleeping";
   let i = 0;
   for (let y = cy - r; y <= cy + r; y += step) {
     for (let x = cx - r; x <= cx + r; x += step) {
@@ -193,7 +291,9 @@ function addSphereShell(
       };
 
       const frontKind =
-        opts?.faceOnFront && zMag + cz > 0 ? (faceKind(x, y) ?? kind) : kind;
+        opts?.faceOnFront && zMag + cz > 0
+          ? (faceKind(x, y, expression) ?? kind)
+          : kind;
       push(cz + zMag, frontKind, 1);
       if (zMag > step * 1.2 && i % 2 === 0) {
         push(cz - zMag, kind, 0.85);
@@ -259,8 +359,11 @@ function tailSpineAsleep(u: number, t: number) {
   };
 }
 
-function tailSpine(u: number, t: number, asleep: boolean) {
-  return asleep ? tailSpineAsleep(u, t) : tailSpineAwake(u, t);
+function tailSpine(u: number, t: number, expression: CocoExpression) {
+  // Sleeping: curled around body. Idle / happy / talking: upright undulating.
+  return expression === "sleeping"
+    ? tailSpineAsleep(u, t)
+    : tailSpineAwake(u, t);
 }
 
 /** Ear disk layout — shared by mesh + idle flap */
@@ -270,11 +373,17 @@ const EAR_X = EAR_DIST * 0.92;
 const EAR_Y = -EAR_DIST * 0.38;
 const EAR_Z = 0.02;
 
-function buildCocoMesh(step = 0.012): Omit<FormDot, "x" | "y" | "z">[] {
+function buildCocoMesh(
+  expression: CocoExpression,
+  step = 0.012,
+): Omit<FormDot, "x" | "y" | "z">[] {
   const pts: Omit<FormDot, "x" | "y" | "z">[] = [];
 
   // Spherical head/body
-  addSphereShell(pts, 0, 0, 0, BODY_R, step, "body", { faceOnFront: true });
+  addSphereShell(pts, 0, 0, 0, BODY_R, step, "body", {
+    faceOnFront: true,
+    expression,
+  });
 
   // Larger flatter ears, lower on the sides
   addSphereShell(pts, -EAR_X, EAR_Y, EAR_Z, EAR_R, step * 0.9, "ear", {
@@ -345,18 +454,34 @@ function rotatePoint(
 }
 
 type CocoProps = {
-  /** Curled-around body when true; extended undulating when false */
-  asleep?: boolean;
+  /**
+   * Face + posture:
+   * - sleeping — caret eyes ˅˅, curled tail (+ Snoring)
+   * - idle — open eyes ˙˙, upright undulating tail
+   * - happy — arc eyes ◝ ◜, same posture as idle (+ Hearts)
+   * - talking — idle face/pose, faster bob + stronger jelly squish
+   *
+   * Rubbing while idle promotes to happy automatically.
+   */
+  expression?: CocoExpression;
 };
 
-/** Coco — sleepy pixel blob. Drag to rotate in 3D. */
-export function Coco({ asleep = true }: CocoProps) {
+/** Coco — pixel blob companion. Drag to rotate / rub in 3D. */
+export function Coco({ expression = "sleeping" }: CocoProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [rubHappy, setRubHappy] = useState(false);
+  const [exprProp, setExprProp] = useState(expression);
+  if (expression !== exprProp) {
+    setExprProp(expression);
+    setRubHappy(false);
+  }
+  const liveExpression: CocoExpression =
+    rubHappy && expression === "idle" ? "happy" : expression;
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d", { alpha: false });
+    const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return;
 
     const reduceMotion = window.matchMedia(
@@ -367,23 +492,37 @@ export function Coco({ asleep = true }: CocoProps) {
     let w = 0;
     let h = 0;
     let dpr = 1;
-    let field: Particle[] = [];
     let formDots: FormDot[] = [];
-    const mesh = buildCocoMesh();
+    let mesh = buildCocoMesh(expression);
+    let live = expression;
     const started = performance.now();
+    let rest = restPose(live);
 
-    let yaw = COCO_REST_YAW;
-    let pitch = COCO_REST_PITCH;
-    let roll = COCO_REST_ROLL;
-    let targetYaw = COCO_REST_YAW;
-    let targetPitch = COCO_REST_PITCH;
-    let targetRoll = COCO_REST_ROLL;
+    let yaw = rest.yaw;
+    let pitch = rest.pitch;
+    let roll = rest.roll;
+    let targetYaw = rest.yaw;
+    let targetPitch = rest.pitch;
+    let targetRoll = rest.roll;
 
     let dragging = false;
     let lastPx = 0;
     let lastPy = 0;
     let velYaw = 0;
     let velPitch = 0;
+
+    let rubTravel = 0;
+    let rubStartedAt = 0;
+    let happyTimer = 0;
+
+    const applyExpression = (next: CocoExpression) => {
+      if (next === live) return;
+      live = next;
+      mesh = buildCocoMesh(live);
+      rest = restPose(live);
+      seedForm();
+      setRubHappy(next === "happy");
+    };
 
     const resize = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -394,24 +533,7 @@ export function Coco({ asleep = true }: CocoProps) {
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      seedField();
       seedForm();
-    };
-
-    const seedField = () => {
-      const density = Math.min(650, Math.floor((w * h) / 2000));
-      field = [];
-      for (let i = 0; i < density; i++) {
-        field.push({
-          homeX: Math.random() * w,
-          homeY: Math.random() * h,
-          shade: 0.1 + Math.random() * 0.35,
-          size: Math.random() < 0.9 ? 1 : 1.3,
-          phase: Math.random() * Math.PI * 2,
-          speed: 0.2 + Math.random() * 0.5,
-          amp: 3 + Math.random() * 8,
-        });
-      }
     };
 
     const seedForm = () => {
@@ -423,19 +545,12 @@ export function Coco({ asleep = true }: CocoProps) {
         let ly = p.ny;
         let lz = p.nz;
         if (p.kind === "tail") {
-          const s = tailSpine(p.u ?? 0, 0, asleep);
+          const s = tailSpine(p.u ?? 0, 0, live);
           lx = s.x;
           ly = s.y;
           lz = s.z;
         }
-        const r = rotatePoint(
-          lx,
-          ly,
-          lz,
-          COCO_REST_YAW,
-          COCO_REST_PITCH,
-          COCO_REST_ROLL,
-        );
+        const r = rotatePoint(lx, ly, lz, yaw, pitch, roll);
         const persp = 1.65 / (1.65 + r.z + 0.55);
         return {
           ...p,
@@ -446,68 +561,21 @@ export function Coco({ asleep = true }: CocoProps) {
       });
     };
 
-    const drawGradients = () => {
-      ctx.fillStyle = "#000000";
-      ctx.fillRect(0, 0, w, h);
-
-      const wash = ctx.createLinearGradient(0, 0, 0, h);
-      wash.addColorStop(0, "rgba(12, 16, 28, 0.85)");
-      wash.addColorStop(0.45, "rgba(18, 24, 36, 0.45)");
-      wash.addColorStop(1, "rgba(8, 12, 18, 0.9)");
-      ctx.fillStyle = wash;
-      ctx.fillRect(0, 0, w, h);
-
-      const ember = ctx.createRadialGradient(
-        w * 0.5,
-        h * 0.55,
-        0,
-        w * 0.5,
-        h * 0.55,
-        Math.min(w, h) * 0.5,
-      );
-      ember.addColorStop(0, "rgba(42, 28, 12, 0.28)");
-      ember.addColorStop(0.55, "rgba(24, 78, 72, 0.1)");
-      ember.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = ember;
-      ctx.fillRect(0, 0, w, h);
-
-      const glow = ctx.createRadialGradient(
-        w * COCO_CX,
-        h * COCO_CY,
-        0,
-        w * COCO_CX,
-        h * COCO_CY,
-        Math.min(w, h) * 0.3,
-      );
-      glow.addColorStop(0, "rgba(255, 248, 235, 0.06)");
-      glow.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = glow;
-      ctx.fillRect(0, 0, w, h);
-    };
-
-    const drawField = (t: number) => {
-      for (const p of field) {
-        const y =
-          p.homeY + Math.sin(p.homeX * 0.008 + t * p.speed + p.phase) * p.amp;
-        const g = Math.floor(155 + p.shade * 70);
-        ctx.fillStyle = `rgba(${g},${g},${Math.min(255, g + 12)},${p.shade * 0.5})`;
-        ctx.fillRect(p.homeX, y, p.size, p.size);
-      }
-    };
-
     const project = (d: FormDot, t: number) => {
       const scale = Math.min(w, h) * COCO_SCALE;
       const cx = w * COCO_CX;
       const cy = h * COCO_CY;
 
+      const motion = squishMotion(live);
       // Soft squash & stretch on body + ears (tail keeps its own undulation)
       const breath = reduceMotion
         ? 0
-        : Math.sin(t * SQUISH_SPEED) * SQUISH_AMOUNT;
-      // Compress Y, spread X/Z slightly — classic jelly breathe
-      const sx = 1 + breath * 0.55;
+        : Math.sin(t * motion.speed) * motion.amount;
+      // Compress Y, spread X/Z — talking spreads out more
+      const sx = 1 + breath * motion.outMul;
       const sy = 1 - breath;
-      const sz = 1 + breath * 0.35;
+      const sz = 1 + breath * (motion.outMul * 0.65);
+      const bobY = reduceMotion ? 0 : Math.sin(t * motion.speed) * motion.bob;
 
       let lx = d.nx;
       let ly = d.ny;
@@ -518,8 +586,8 @@ export function Coco({ asleep = true }: CocoProps) {
         const vv = d.v ?? 0;
         const ww = d.w ?? 0;
         const animT = reduceMotion ? 0 : t;
-        const a = tailSpine(u, animT, asleep);
-        const b = tailSpine(Math.min(1, u + 0.02), animT, asleep);
+        const a = tailSpine(u, animT, live);
+        const b = tailSpine(Math.min(1, u + 0.02), animT, live);
         const tx = b.x - a.x;
         const ty = b.y - a.y;
         const tz = b.z - a.z;
@@ -544,10 +612,12 @@ export function Coco({ asleep = true }: CocoProps) {
         lx = a.x + px * vv + (bx / bl) * ww;
         ly = a.y + py * vv + (by / bl) * ww;
         lz = a.z + pz * vv + (bz / bl) * ww;
+        // Talk-bob rides along with the body
+        ly += bobY;
       } else {
-        // Body + ears share idle squish
+        // Body + ears share idle/talk squish + bob
         lx *= sx;
-        ly *= sy;
+        ly = ly * sy + bobY;
         lz *= sz;
       }
 
@@ -589,9 +659,10 @@ export function Coco({ asleep = true }: CocoProps) {
     };
 
     const drawForm = (t: number) => {
+      const motion = squishMotion(live);
       const breath = reduceMotion
         ? 0
-        : Math.sin(t * SQUISH_SPEED) * SQUISH_AMOUNT;
+        : Math.sin(t * motion.speed) * motion.amount;
       const follow = reduceMotion ? 1 : 0.38;
 
       const projected: {
@@ -637,9 +708,9 @@ export function Coco({ asleep = true }: CocoProps) {
         targetPitch += velPitch;
         velYaw *= 0.92;
         velPitch *= 0.92;
-        targetYaw += (COCO_REST_YAW - targetYaw) * 0.02;
-        targetPitch += (COCO_REST_PITCH - targetPitch) * 0.02;
-        targetRoll += (COCO_REST_ROLL - targetRoll) * 0.04;
+        targetYaw += (rest.yaw - targetYaw) * 0.02;
+        targetPitch += (rest.pitch - targetPitch) * 0.02;
+        targetRoll += (rest.roll - targetRoll) * 0.04;
       }
 
       yaw += (targetYaw - yaw) * 0.18;
@@ -649,8 +720,7 @@ export function Coco({ asleep = true }: CocoProps) {
       targetPitch = Math.max(-1.2, Math.min(1.0, targetPitch));
       targetYaw = Math.max(-1.8, Math.min(1.8, targetYaw));
 
-      drawGradients();
-      drawField(t);
+      ctx.clearRect(0, 0, w, h);
       drawForm(t);
       raf = requestAnimationFrame(frame);
     };
@@ -661,6 +731,12 @@ export function Coco({ asleep = true }: CocoProps) {
       velPitch = 0;
       lastPx = e.clientX;
       lastPy = e.clientY;
+      rubTravel = 0;
+      rubStartedAt = performance.now();
+      if (happyTimer) {
+        window.clearTimeout(happyTimer);
+        happyTimer = 0;
+      }
       canvas.setPointerCapture(e.pointerId);
       canvas.style.cursor = "grabbing";
     };
@@ -676,6 +752,20 @@ export function Coco({ asleep = true }: CocoProps) {
       targetPitch -= dy * sens;
       velYaw = dx * sens * 0.35;
       velPitch = -dy * sens * 0.35;
+
+      // Idle rub → happy + hearts
+      if (expression === "idle" || live === "happy") {
+        rubTravel += Math.hypot(dx, dy);
+        const held = performance.now() - rubStartedAt;
+        if (
+          live === "idle" &&
+          expression === "idle" &&
+          rubTravel >= RUB_TRAVEL &&
+          held >= RUB_HOLD_MS
+        ) {
+          applyExpression("happy");
+        }
+      }
     };
 
     const onPointerUp = (e: PointerEvent) => {
@@ -686,6 +776,13 @@ export function Coco({ asleep = true }: CocoProps) {
         /* already released */
       }
       canvas.style.cursor = "grab";
+
+      if (live === "happy" && expression === "idle") {
+        happyTimer = window.setTimeout(() => {
+          happyTimer = 0;
+          if (!dragging) applyExpression("idle");
+        }, HAPPY_LINGER_MS);
+      }
     };
 
     resize();
@@ -698,19 +795,25 @@ export function Coco({ asleep = true }: CocoProps) {
 
     return () => {
       cancelAnimationFrame(raf);
+      if (happyTimer) window.clearTimeout(happyTimer);
       window.removeEventListener("resize", resize);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerUp);
     };
-  }, [asleep]);
+    // Base prop only — happy is applied in-place without remounting
+  }, [expression]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      aria-label="Coco — drag to rotate"
-      className="absolute inset-0 h-full w-full cursor-grab touch-none"
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        aria-label="Coco — drag to rotate"
+        className="absolute inset-0 h-full w-full cursor-grab touch-none"
+      />
+      {liveExpression === "sleeping" && <Snoring />}
+      <Hearts active={liveExpression === "happy"} />
+    </>
   );
 }

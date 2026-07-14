@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { COCO_CX, COCO_CY, COCO_SCALE } from "./placement";
+import { COCO_CX, COCO_CY, COCO_SCALE } from "../placement";
 
 type ZDot = {
   letter: number;
@@ -26,7 +26,7 @@ const LETTER = zLetterDots();
 const BUBBLE_PERIOD = 2.8;
 
 /** Screen-space zzz — bubble up and fade; never inherits Coco 3D */
-export function Zzz() {
+export function Snoring() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
