@@ -2,8 +2,8 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { DialogueEngine, STAT_KEYS, type State } from "@/dialogue";
-import { setGameSnapshot } from "@/game/state";
+import { DialogueEngine, STAT_KEYS, type State } from "@/lib/dialogue";
+import { setGameSnapshot } from "@/lib/game/state";
 import type { TypingGateRef } from "./typewriter";
 
 const STAT_LABELS: Record<(typeof STAT_KEYS)[number], string> = {

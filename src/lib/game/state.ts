@@ -1,4 +1,4 @@
-import type { Presentable, State } from "@/dialogue";
+import type { Presentable, State } from "@/lib/dialogue";
 
 /**
  * Thin shared snapshot so React UI and (later) Phaser can read the same

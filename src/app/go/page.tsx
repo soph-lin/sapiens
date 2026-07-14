@@ -1,4 +1,4 @@
-import { GRIFFIN_WHARF_ART } from "@/content/art/griffin-wharf";
+import { GRIFFIN_WHARF_ART } from "@/lib/content/art/griffin-wharf";
 import bostonTeaParty from "@/content/voyages/boston-tea-party.json";
 import { DialoguePanel } from "@/app/components/dialogue";
 

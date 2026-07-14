@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import type { Presentable, State } from "@/dialogue";
+import type { Presentable, State } from "@/lib/dialogue";
 import type { DialogueTheme } from "./theme";
 import {
   TypeCaret,

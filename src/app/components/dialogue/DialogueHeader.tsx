@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { State } from "@/dialogue";
+import type { State } from "@/lib/dialogue";
 import type { DialogueTheme } from "./theme";
 import { prefersReducedMotion } from "./typewriter";
 
