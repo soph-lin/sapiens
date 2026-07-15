@@ -5,6 +5,14 @@ import type { State } from "@/lib/dialogue";
 import type { DialogueTheme } from "./theme";
 import { prefersReducedMotion } from "./typewriter";
 
+function humanizeStatKey(key: string): string {
+  return key
+    .split(/[_.]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function Meter({
   label,
   value,
@@ -84,7 +92,7 @@ type DialogueHeaderProps = {
   subtitle?: string;
   state: State;
   theme: DialogueTheme;
-  /** Voyage meters; only when story `metadata.stats` is true. */
+  /** Dynamic numeric stats; only when the story contains tracked stats. */
   showStats?: boolean;
 };
 
@@ -108,24 +116,15 @@ export function DialogueHeader({
       {showStats ? (
         <div className="mx-auto w-full max-w-2xl px-6 sm:px-8">
           <div className={theme.metersRule}>
-            <Meter
-              label="Reputation"
-              value={state.reputation ?? 0}
-              max={10}
-              theme={theme}
-            />
-            <Meter
-              label="Evidence"
-              value={state.evidence ?? 0}
-              max={10}
-              theme={theme}
-            />
-            <Meter
-              label="Safety"
-              value={state.safety ?? 0}
-              max={100}
-              theme={theme}
-            />
+            {Object.entries(state.stats).map(([key, value]) => (
+              <Meter
+                key={key}
+                label={humanizeStatKey(key)}
+                value={value}
+                max={Math.max(100, Math.abs(value))}
+                theme={theme}
+              />
+            ))}
           </div>
         </div>
       ) : null}

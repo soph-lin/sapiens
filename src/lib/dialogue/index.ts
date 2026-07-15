@@ -1,5 +1,5 @@
 export { DialogueEngine, applyEffect, evaluateCondition, interpolate } from "./engine";
-export { validateStory } from "./validate";
+export { getStoryStatKeys, validateStory, validateStoryPayload } from "./validate";
 export type {
   Choice,
   ChoiceNode,
@@ -20,4 +20,3 @@ export type {
   TextNode,
   VoyageStats,
 } from "./types";
-export { STAT_KEYS } from "./types";

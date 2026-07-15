@@ -1,30 +1,21 @@
-export type StatKey = "reputation" | "evidence" | "safety";
+export type StatKey = string;
 
-export const STAT_KEYS: StatKey[] = ["reputation", "evidence", "safety"];
-
-export type VoyageStats = {
-  reputation: number;
-  safety: number;
-  evidence: number;
-};
+export type VoyageStats = Record<StatKey, number>;
 
 /**
- * Dialogue runtime state. Voyage meters (`reputation` / `evidence` / `safety`)
- * are only present when the story opts in via `metadata.stats: true`.
+ * Dialogue runtime state. Numeric story variables are stored in `stats` when
+ * the story opts in via `metadata.stats: true`.
  */
 export type State = {
   flags: Record<string, boolean>;
-  reputation?: number;
-  safety?: number;
-  evidence?: number;
+  stats: VoyageStats;
 };
 
 export type StoryMetadata = {
-  /**
-   * When true, track reputation / evidence / safety.
-   * Omitted or false: flags only (canon / framing dialogue).
-   */
+  /** When true, numeric variables referenced by the story are tracked in State.stats. */
   stats?: boolean;
+  /** Optional starting values for dynamically discovered numeric variables. */
+  statDefaults?: Record<string, number>;
 };
 
 export type Effect = {

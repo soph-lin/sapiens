@@ -1,5 +1,7 @@
 "use client";
 
+import Image from "next/image";
+import { useState } from "react";
 import { Toaster } from "react-hot-toast";
 import { AtmosphereArt } from "./AtmosphereArt";
 import { DialogueBox } from "./DialogueBox";
@@ -15,7 +17,20 @@ type DialoguePanelProps = {
   theme?: DialogueThemeId;
   /** Optional decorative braille / monospace scene above the dialogue. */
   atmosphereArt?: string;
+  characters?: Array<{ name: string; assetUrl?: string }>;
+  collectible?: { name: string; assetUrl?: string };
 };
+
+function findSpeakerAsset(
+  speaker: string | undefined,
+  characters: Array<{ name: string; assetUrl?: string }>,
+) {
+  if (!speaker) return undefined;
+  const normalizedSpeaker = speaker.trim().toLowerCase();
+  return characters.find(
+    (character) => character.name.trim().toLowerCase() === normalizedSpeaker,
+  );
+}
 
 export function DialoguePanel({
   scenarioId,
@@ -24,8 +39,11 @@ export function DialoguePanel({
   subtitle,
   theme: themeId = "vanilla",
   atmosphereArt,
+  characters = [],
+  collectible,
 }: DialoguePanelProps) {
   const theme = THEMES[themeId];
+  const [collectibleDismissed, setCollectibleDismissed] = useState(false);
   const {
     view,
     state,
@@ -34,8 +52,18 @@ export function DialoguePanel({
     typingGateRef,
     advance,
     choose,
-    restart,
+    restart: restartSession,
   } = useDialogueSession({ scenarioId, story });
+  const speakerAsset = view.kind === "text"
+    ? findSpeakerAsset(view.speaker, characters)
+    : undefined;
+
+  const showCollectible = view.kind === "end" && Boolean(collectible) && !collectibleDismissed;
+
+  const restart = () => {
+    setCollectibleDismissed(false);
+    restartSession();
+  };
 
   return (
     <div className={theme.root}>
@@ -62,6 +90,20 @@ export function DialoguePanel({
           <AtmosphereArt art={atmosphereArt} theme={theme} />
         ) : null}
 
+        {speakerAsset?.assetUrl ? (
+          <div className="flex justify-end pb-4">
+            <Image
+              src={speakerAsset.assetUrl}
+              alt={`${speakerAsset.name} portrait`}
+              width={256}
+              height={256}
+              unoptimized
+              className="block h-64 w-64 object-contain"
+              style={{ imageRendering: "pixelated" }}
+            />
+          </div>
+        ) : null}
+
         <div key={revealKey} className="flex flex-1 flex-col">
           <DialogueBox
             view={view}
@@ -73,6 +115,34 @@ export function DialoguePanel({
           />
         </div>
       </main>
+
+      {showCollectible && collectible ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-6 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-amber-300/40 bg-[#fffaf0] p-6 text-center text-neutral-950 shadow-2xl">
+            <p className="font-space text-[10px] uppercase tracking-[0.28em] text-amber-700">
+              Collectible obtained!
+            </p>
+            {collectible.assetUrl ? (
+              <Image
+                src={collectible.assetUrl}
+                alt={collectible.name}
+                width={128}
+                height={128}
+                unoptimized
+                className="mx-auto mt-5 h-32 w-32 rounded-xl border border-amber-200 bg-white object-contain p-3"
+              />
+            ) : null}
+            <h2 className="mt-5 font-display text-3xl">{collectible.name}</h2>
+            <button
+              type="button"
+              onClick={() => setCollectibleDismissed(true)}
+              className="mt-6 rounded-full bg-neutral-950 px-5 py-3 font-space text-[10px] uppercase tracking-[0.18em] text-white"
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

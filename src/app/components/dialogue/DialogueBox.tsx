@@ -16,6 +16,14 @@ import {
   type TypingGateRef,
 } from "./typewriter";
 
+function humanizeStatKey(key: string): string {
+  return key
+    .split(/[_.]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 /** Dialogue body text sizes (16px root: 1rem = 16px) */
 const FONT_SIZE_MD = "1.2rem";
 const FONT_SIZE_LG = "1.65rem";
@@ -342,18 +350,12 @@ function EndBeat({
         <>
           {showStats ? (
             <dl className={theme.endStatRule}>
-              <div>
-                <dt className={theme.endStatLabel}>Reputation</dt>
-                <dd className={theme.endStatValue}>{state.reputation}</dd>
-              </div>
-              <div>
-                <dt className={theme.endStatLabel}>Evidence</dt>
-                <dd className={theme.endStatValue}>{state.evidence}</dd>
-              </div>
-              <div>
-                <dt className={theme.endStatLabel}>Safety</dt>
-                <dd className={theme.endStatValue}>{state.safety}</dd>
-              </div>
+              {Object.entries(state.stats).map(([key, value]) => (
+                <div key={key}>
+                  <dt className={theme.endStatLabel}>{humanizeStatKey(key)}</dt>
+                  <dd className={theme.endStatValue}>{value}</dd>
+                </div>
+              ))}
             </dl>
           ) : null}
           <button type="button" onClick={onRestart} className={theme.restart}>

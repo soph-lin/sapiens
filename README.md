@@ -2,6 +2,24 @@
 
 experience humanity. the only way to move forwards is to look back
 
+## features
+
+`/` auraful hero page
+
+`/home` your home base
+
+`/steer` plan voyages
+
+`/sail` sail away to a new world
+
+`/map` uhh honestly this is wip its really ugly rn but its a 2d top-down renderer
+
+## tech
+
+[openai](https://openai.com) & [anthropic](https://www.anthropic.com) for llms
+
+[pixellab](https://www.pixellab.ai) for pixel art gen
+
 ## dev
 
 ### install pnpm (if you don't already have it)
@@ -34,6 +52,10 @@ set-alias -name pn -value pnpm
 ```
 
 now whenever you have to run a `pnpm` cmd, you can type in `pn` (or whatever alias you created) instead.
+
+### init
+
+create `.env.local` ref. [.env.example](.env.example)
 
 ### run
 

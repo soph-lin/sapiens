@@ -7,6 +7,8 @@ Educational exploration game: players learn by exploring interactive worlds, inv
 - `.brain/PRODUCT.md` — product vision, audience, and core experience.
 - `.brain/ARCH.md` — current implementation and target architecture.
 - `.brain/features/DIALOGUE.md` — dialogue data model and runtime requirements.
+- `.brain/features/CURRENCY.md` — stardust currency and shop notes.
+- `.brain/features/STEER.md` — story orchestration pipeline and replayable runs.
 - `src/app/` — Next.js application code.
 
 ## Dev

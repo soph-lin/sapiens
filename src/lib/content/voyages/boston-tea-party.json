@@ -1,6 +1,11 @@
 {
   "metadata": {
-    "stats": true
+    "stats": true,
+    "statDefaults": {
+      "reputation": 0,
+      "evidence": 0,
+      "safety": 50
+    }
   },
   "start": "harbor",
   "nodes": {

@@ -2,15 +2,17 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { DialogueEngine, STAT_KEYS, type State } from "@/lib/dialogue";
+import { DialogueEngine, type State } from "@/lib/dialogue";
 import { setGameSnapshot } from "@/lib/game/state";
 import type { TypingGateRef } from "./typewriter";
 
-const STAT_LABELS: Record<(typeof STAT_KEYS)[number], string> = {
-  reputation: "Reputation",
-  evidence: "Evidence",
-  safety: "Safety",
-};
+function humanizeStatKey(key: string): string {
+  return key
+    .split(/[_.]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 function humanizeFlag(key: string): string {
   return key
@@ -21,14 +23,17 @@ function humanizeFlag(key: string): string {
 }
 
 function toastStateDiff(before: State, after: State): void {
-  for (const key of STAT_KEYS) {
-    const prev = before[key];
-    const next = after[key];
-    if (prev === undefined || next === undefined) continue;
+  const statKeys = new Set([
+    ...Object.keys(before.stats),
+    ...Object.keys(after.stats),
+  ]);
+  for (const key of statKeys) {
+    const prev = before.stats[key] ?? 0;
+    const next = after.stats[key] ?? 0;
     const delta = next - prev;
     if (delta === 0) continue;
     const sign = delta > 0 ? "+" : "−";
-    toast(`${STAT_LABELS[key]} ${sign}${Math.abs(delta)}`);
+    toast(`${humanizeStatKey(key)} ${sign}${Math.abs(delta)}`);
   }
 
   const flagKeys = new Set([

@@ -15,6 +15,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isFlagVariable(variable: string): boolean {
+  return variable.startsWith("flags.");
+}
+
 function assertString(value: unknown, label: string): string {
   if (typeof value !== "string" || value.length === 0) {
     throw new Error(`${label} must be a non-empty string`);
@@ -27,9 +31,17 @@ function assertOptionalString(value: unknown, label: string): string | undefined
   return assertString(value, label);
 }
 
+function assertVariable(value: unknown, label: string): string {
+  const variable = assertString(value, label);
+  if (isFlagVariable(variable) && variable.length === "flags.".length) {
+    throw new Error(`${label} must include a flag name after flags.`);
+  }
+  return variable;
+}
+
 function validateEffect(raw: unknown, label: string): Effect {
   if (!isRecord(raw)) throw new Error(`${label} must be an object`);
-  const variable = assertString(raw.variable, `${label}.variable`);
+  const variable = assertVariable(raw.variable, `${label}.variable`);
   const operation = raw.operation;
   if (
     operation !== "add" &&
@@ -39,15 +51,25 @@ function validateEffect(raw: unknown, label: string): Effect {
     throw new Error(`${label}.operation must be add | subtract | set`);
   }
   const value = raw.value;
-  if (typeof value !== "number" && typeof value !== "boolean") {
-    throw new Error(`${label}.value must be a number or boolean`);
+  if (operation === "set" && isFlagVariable(variable) && typeof value !== "boolean") {
+    throw new Error(`${label}.value must be a boolean for flag variables`);
   }
-  return { variable, operation, value };
+  if (operation === "set" && !isFlagVariable(variable) && (typeof value !== "number" || !Number.isFinite(value))) {
+    throw new Error(`${label}.value must be a finite number for stat variables`);
+  }
+  if (operation !== "set" && (isFlagVariable(variable) || typeof value !== "number" || !Number.isFinite(value))) {
+    throw new Error(`${label} add/subtract effects require finite numeric stat variables`);
+  }
+  return {
+    variable,
+    operation,
+    value: isFlagVariable(variable) ? value as boolean : value as number,
+  };
 }
 
 function validateCondition(raw: unknown, label: string): Condition {
   if (!isRecord(raw)) throw new Error(`${label} must be an object`);
-  const variable = assertString(raw.variable, `${label}.variable`);
+  const variable = assertVariable(raw.variable, `${label}.variable`);
   const operator = raw.operator;
   if (
     operator !== "==" &&
@@ -60,10 +82,17 @@ function validateCondition(raw: unknown, label: string): Condition {
     throw new Error(`${label}.operator is invalid`);
   }
   const value = raw.value;
-  if (typeof value !== "number" && typeof value !== "boolean") {
-    throw new Error(`${label}.value must be a number or boolean`);
+  if (isFlagVariable(variable) && typeof value !== "boolean") {
+    throw new Error(`${label}.value must be a boolean for flag variables`);
   }
-  return { variable, operator, value };
+  if (!isFlagVariable(variable) && (typeof value !== "number" || !Number.isFinite(value))) {
+    throw new Error(`${label}.value must be a finite number for stat variables`);
+  }
+  return {
+    variable,
+    operator,
+    value: isFlagVariable(variable) ? value as boolean : value as number,
+  };
 }
 
 function validateChoice(raw: unknown, label: string): Choice {
@@ -167,7 +196,63 @@ function validateMetadata(raw: unknown): StoryMetadata | undefined {
     }
     metadata.stats = raw.stats;
   }
+  if (raw.statDefaults !== undefined) {
+    if (!isRecord(raw.statDefaults)) throw new Error("statDefaults must be an object");
+    const statDefaults: Record<string, number> = {};
+    for (const [key, value] of Object.entries(raw.statDefaults)) {
+      if (!key || typeof value !== "number" || !Number.isFinite(value)) {
+        throw new Error(`statDefaults.${key} must be a finite number`);
+      }
+      statDefaults[key] = value;
+    }
+    if (metadata.stats !== true) {
+      throw new Error("statDefaults requires metadata.stats: true");
+    }
+    metadata.statDefaults = statDefaults;
+  }
   return metadata;
+}
+
+function collectInterpolationVariables(text: string, variables: Set<string>): void {
+  for (const match of text.matchAll(/\{([a-zA-Z0-9_.]+)\}/g)) {
+    variables.add(match[1]);
+  }
+}
+
+function collectStoryVariables(nodes: Record<string, Node>): Set<string> {
+  const variables = new Set<string>();
+  const collectCondition = (condition?: Condition) => {
+    if (condition) variables.add(condition.variable);
+  };
+  const collectEffect = (effect: Effect) => variables.add(effect.variable);
+
+  for (const node of Object.values(nodes)) {
+    if (node.type === "text") {
+      collectCondition(node.condition);
+      collectInterpolationVariables(node.text, variables);
+      if (node.speaker) collectInterpolationVariables(node.speaker, variables);
+    } else if (node.type === "choice") {
+      collectInterpolationVariables(node.prompt ?? "", variables);
+      node.choices.forEach((choice) => {
+        collectCondition(choice.condition);
+        collectInterpolationVariables(choice.label, variables);
+        choice.effects?.forEach(collectEffect);
+      });
+    } else if (node.type === "set") {
+      node.effects.forEach(collectEffect);
+    } else {
+      collectInterpolationVariables(node.title, variables);
+      collectInterpolationVariables(node.text, variables);
+    }
+  }
+
+  return variables;
+}
+
+export function getStoryStatKeys(story: Pick<Story, "nodes">): string[] {
+  return [...collectStoryVariables(story.nodes)].filter(
+    (variable) => !isFlagVariable(variable),
+  );
 }
 
 /** Validate story data and return a typed Story. Throws on invalid shape. */
@@ -212,7 +297,24 @@ export function validateStory(raw: unknown): Story {
   }
 
   const metadata = validateMetadata(raw.metadata);
+  const statVariables = getStoryStatKeys({ nodes });
+  if (statVariables.length > 0 && metadata?.stats !== true) {
+    throw new Error(
+      `Story uses numeric variables (${statVariables.join(", ")}) but metadata.stats is not true`,
+    );
+  }
   const story: Story = { start, nodes };
   if (metadata) story.metadata = metadata;
   return story;
+}
+
+/** Accept a raw story or the Writer's { dialogue, embellish } payload. */
+export function validateStoryPayload(raw: unknown): Story {
+  if (isRecord(raw) && ("start" in raw || "nodes" in raw)) {
+    return validateStory(raw);
+  }
+  if (isRecord(raw) && raw.dialogue !== undefined) {
+    return validateStory(raw.dialogue);
+  }
+  return validateStory(raw);
 }

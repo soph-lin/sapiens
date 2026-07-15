@@ -1,0 +1,95 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AssetType {
+  CHARACTER
+  COLLECTIBLE
+}
+
+enum StoryGenRunStatus {
+  ongoing
+  fail
+  succeed
+}
+
+model Story {
+  id          String       @id @default(cuid())
+  slug        String       @unique
+  topic       String
+  storyJson   Json
+  characters  Character[]
+  collectible Collectible?
+  genRun      StoryGenRun?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Character {
+  id          String  @id @default(cuid())
+  storyId     String
+  name        String
+  description String
+  known       Boolean
+  assetId     String
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  asset Asset @relation("CharacterAsset", fields: [assetId], references: [id])
+
+  @@index([storyId])
+}
+
+model Collectible {
+  id          String  @id @default(cuid())
+  storyId     String  @unique
+  name        String
+  description String
+  assetId     String  @unique
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  asset Asset @relation("CollectibleAsset", fields: [assetId], references: [id])
+}
+
+model Asset {
+  id        String    @id @default(cuid())
+  type      AssetType
+  name      String
+  mimeType  String    @default("image/png")
+  data      Bytes
+  metadata  Json?
+  createdAt DateTime  @default(now())
+
+  characterOwners  Character[]  @relation("CharacterAsset")
+  collectibleOwner Collectible? @relation("CollectibleAsset")
+}
+
+model StoryGenRun {
+  id         String   @id @default(cuid())
+  slug       String?  @unique
+  storyId    String?  @unique
+  status     StoryGenRunStatus
+  progress   Json
+  usage      Json?
+  steering   Json?
+  modelConfig Json?
+  storyConfig Json?
+  researcherOutput Json?
+  directorOutput Json?
+  writerOutput Json?
+  artistOutput Json?
+  error      String?
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+
+  story Story? @relation(fields: [storyId], references: [id], onDelete: Cascade)
+}

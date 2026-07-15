@@ -5,65 +5,39 @@ import type {
   Presentable,
   PresentableChoice,
   State,
-  StatKey,
   Story,
   StoryMetadata,
 } from "./types";
-import { STAT_KEYS } from "./types";
-import { validateStory } from "./validate";
-
-const DEFAULT_STATS: Record<StatKey, number> = {
-  reputation: 0,
-  safety: 50,
-  evidence: 0,
-};
-
-function storyTracksStats(metadata?: StoryMetadata): boolean {
-  return metadata?.stats === true;
-}
+import { getStoryStatKeys, validateStory } from "./validate";
 
 function createState(
-  tracksStats: boolean,
+  statKeys: string[],
+  metadata: StoryMetadata | undefined,
   initialState: Partial<State> = {},
 ): State {
   const state: State = {
     flags: { ...(initialState.flags ?? {}) },
+    stats: {},
   };
-  if (tracksStats) {
-    for (const key of STAT_KEYS) {
-      state[key] = initialState[key] ?? DEFAULT_STATS[key];
-    }
+  for (const key of statKeys) {
+    state.stats[key] =
+      initialState.stats?.[key] ?? metadata?.statDefaults?.[key] ?? 0;
   }
   return state;
 }
 
 function cloneState(state: State): State {
-  const next: State = { flags: { ...state.flags } };
-  for (const key of STAT_KEYS) {
-    if (state[key] !== undefined) next[key] = state[key];
-  }
-  return next;
-}
-
-function isStatKey(variable: string): variable is StatKey {
-  return (STAT_KEYS as string[]).includes(variable);
+  return { flags: { ...state.flags }, stats: { ...state.stats } };
 }
 
 function readVariable(state: State, variable: string): number | boolean {
-  if (isStatKey(variable)) {
-    const value = state[variable];
-    if (value === undefined) {
-      throw new Error(
-        `Variable "${variable}" requires metadata.stats: true on this story`,
-      );
-    }
-    return value;
-  }
   if (variable.startsWith("flags.")) {
     const key = variable.slice("flags.".length);
     return state.flags[key] ?? false;
   }
-  throw new Error(`Unknown variable "${variable}"`);
+  const value = state.stats[variable];
+  if (value === undefined) throw new Error(`Unknown stat variable "${variable}"`);
+  return value;
 }
 
 function writeVariable(
@@ -71,18 +45,6 @@ function writeVariable(
   variable: string,
   value: number | boolean,
 ): void {
-  if (isStatKey(variable)) {
-    if (state[variable] === undefined) {
-      throw new Error(
-        `Variable "${variable}" requires metadata.stats: true on this story`,
-      );
-    }
-    if (typeof value !== "number") {
-      throw new Error(`Variable "${variable}" expects a number`);
-    }
-    state[variable] = value;
-    return;
-  }
   if (variable.startsWith("flags.")) {
     const key = variable.slice("flags.".length);
     if (typeof value !== "boolean") {
@@ -91,7 +53,13 @@ function writeVariable(
     state.flags[key] = value;
     return;
   }
-  throw new Error(`Unknown variable "${variable}"`);
+  if (!(variable in state.stats)) {
+    throw new Error(`Unknown stat variable "${variable}"`);
+  }
+  if (typeof value !== "number") {
+    throw new Error(`Stat variable "${variable}" expects a number`);
+  }
+  state.stats[variable] = value;
 }
 
 export function applyEffect(state: State, effect: Effect): void {
@@ -152,15 +120,20 @@ function conditionPasses(state: State, condition?: Condition): boolean {
 
 export class DialogueEngine {
   private readonly story: Story;
-  private readonly tracksStats: boolean;
+  private readonly statKeys: string[];
   private state: State;
   private currentId: string;
   private ended = false;
 
   constructor(rawStory: unknown, initialState: Partial<State> = {}) {
     this.story = validateStory(rawStory);
-    this.tracksStats = storyTracksStats(this.story.metadata);
-    this.state = createState(this.tracksStats, initialState);
+    this.statKeys = [
+      ...new Set([
+        ...getStoryStatKeys(this.story),
+        ...Object.keys(this.story.metadata?.statDefaults ?? {}),
+      ]),
+    ];
+    this.state = createState(this.statKeys, this.story.metadata, initialState);
     this.currentId = this.story.start;
     this.resolveToPresentable();
   }
@@ -170,7 +143,7 @@ export class DialogueEngine {
   }
 
   hasStats(): boolean {
-    return this.tracksStats;
+    return this.statKeys.length > 0;
   }
 
   isEnded(): boolean {
@@ -315,7 +288,7 @@ export class DialogueEngine {
         title: interpolate(node.title, this.state),
         text: interpolate(node.text, this.state),
         state: this.getState(),
-        showStats: this.tracksStats,
+        showStats: this.hasStats(),
       };
     }
 

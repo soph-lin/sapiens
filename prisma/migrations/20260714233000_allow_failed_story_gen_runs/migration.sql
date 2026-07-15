@@ -1,0 +1,1 @@
+ALTER TABLE "StoryGenRun" ALTER COLUMN "storyId" DROP NOT NULL;
