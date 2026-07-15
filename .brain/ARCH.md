@@ -13,7 +13,7 @@
 - Agent implementations live in `src/lib/orchestrator/`; the generation pipeline runs researcher → director → writer → artist. The Writer selects character assets actually needed by the dialogue, while the Director's collectible is passed through to Artist. Model-backed agents share execution context, retry failures up to `ORCHESTRATOR_CONFIG.maxTries` total attempts, and receive the prior failure in retry instructions.
 - Completed generation runs are stored in `StoryGenRun` with replay metadata, per-agent outputs, and progress logs. Replayable runs are exposed under `/steer/voyages`; legacy rows without the new snapshots are hidden.
 - Character assets are reused only when a matching `Character` record is marked `known`; the first matching known record is selected, and new artwork is generated otherwise. Newly generated characters start with `known: false`, and shared character assets may be attached to multiple stories.
-- The map prototype and its sprite pack are archived under `bin/src/app/`, `bin/src/lib/map/`, and `bin/public/Cute_Fantasy/`; they are not part of the active Next.js surface.
+- The map prototype and its sprite pack are archived under `bin/src/app/`, `bin/src/lib/map/`, `bin/src/lib/game/`, and `bin/public/Cute_Fantasy/`; they are not part of the active Next.js surface.
 
 ## Target direction
 
