@@ -12,8 +12,6 @@ experience humanity. the only way to move forwards is to look back
 
 `/sail` sail away to a new world
 
-`/map` uhh honestly this is wip its really ugly rn but its a 2d top-down renderer
-
 ## tech
 
 [openai](https://openai.com) & [anthropic](https://www.anthropic.com) for llms

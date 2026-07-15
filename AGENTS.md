@@ -11,6 +11,8 @@ Educational exploration game: players learn by exploring interactive worlds, inv
 - `.brain/features/STEER.md` — story orchestration pipeline and replayable runs.
 - `src/app/` — Next.js application code.
 
+DO not read or edit `/bin` it is where the rejected ideas live...
+
 ## Dev
 
 - This project uses **pnpm**. Never run `npm` (or `npx`) commands — use `pnpm` instead.
