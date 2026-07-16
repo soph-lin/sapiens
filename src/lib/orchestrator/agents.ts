@@ -71,6 +71,18 @@ export const pixelLabTools: ToolDefinition[] = [
   },
   {
     type: "function",
+    name: "pixellab_create_character",
+    description:
+      "Create a reusable PixelLab v3 humanoid character with an optional eight-direction rotation set. The API call is fixed to 48x48, highly detailed, default outline, low top-down view, mannequin humanoid template, transparent background, and v3 generation.",
+    parameters: {
+      type: "object",
+      properties: { description: { type: "string" } },
+      required: ["description"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
     name: "pixellab_create_collectible",
     description:
       "Submit a PixelLab collectible generation request. The API call is fixed to 32x32 with a transparent background.",

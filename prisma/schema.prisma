@@ -14,6 +14,7 @@ datasource db {
 
 enum AssetType {
   CHARACTER
+  CHARACTER_SPRITE
   COLLECTIBLE
 }
 
@@ -27,12 +28,21 @@ model Story {
   id          String       @id @default(cuid())
   slug        String       @unique
   topic       String
+  synopsis    Json?
   storyJson   Json
   characters  Character[]
   collectible Collectible?
   genRun      StoryGenRun?
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
+}
+
+model Map {
+  id        String   @id @default(cuid())
+  name      String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Character {
@@ -42,9 +52,11 @@ model Character {
   description String
   known       Boolean
   assetId     String
+  spriteAssetId String?
 
   story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
   asset Asset @relation("CharacterAsset", fields: [assetId], references: [id])
+  spriteAsset Asset? @relation("CharacterSpriteAsset", fields: [spriteAssetId], references: [id])
 
   @@index([storyId])
 }
@@ -70,7 +82,24 @@ model Asset {
   createdAt DateTime  @default(now())
 
   characterOwners  Character[]  @relation("CharacterAsset")
+  characterSpriteOwners Character[] @relation("CharacterSpriteAsset")
   collectibleOwner Collectible? @relation("CollectibleAsset")
+  frames           AssetFrame[]
+}
+
+model AssetFrame {
+  id        String   @id @default(cuid())
+  assetId   String
+  frameKey  String
+  mimeType  String   @default("image/png")
+  data      Bytes
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, frameKey])
+  @@index([assetId])
 }
 
 model StoryGenRun {

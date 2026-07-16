@@ -25,10 +25,17 @@ export type ExistingCharacterAsset = {
   data: Uint8Array;
   metadata: unknown;
   createdAt: Date;
+  frames?: Array<{
+    frameKey: string;
+    mimeType: string;
+    data: Uint8Array;
+    metadata: unknown;
+  }>;
 };
 
 export type CharacterAssetStore = {
   findByNames: (names: string[]) => Promise<ExistingCharacterAsset[]>;
+  findSpriteByNames: (names: string[]) => Promise<ExistingCharacterAsset[]>;
 };
 
 export type AgentExecutionOptions = {
@@ -89,11 +96,22 @@ export function createAgentContext(options: AgentExecutionOptions = {}) {
       findByNames: async (names) => {
         const { prisma } = await import("../prisma");
         const characters = await prisma.character.findMany({
-          where: { name: { in: names }, known: true },
+          where: { name: { in: names } },
           include: { asset: true },
           orderBy: { id: "asc" },
         });
         return characters.map(({ asset }) => asset);
+      },
+      findSpriteByNames: async (names) => {
+        const { prisma } = await import("../prisma");
+        const characters = await prisma.character.findMany({
+          where: { name: { in: names }, spriteAssetId: { not: null } },
+          include: { spriteAsset: { include: { frames: true } } },
+          orderBy: { id: "asc" },
+        });
+        return characters.flatMap(({ spriteAsset }) =>
+          spriteAsset ? [spriteAsset] : [],
+        );
       },
     },
   };

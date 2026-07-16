@@ -2,7 +2,9 @@ export type AgentName =
   | "researcher"
   | "director"
   | "writer"
-  | "artist";
+  | "artist"
+  | "coco"
+  | "actor";
 
 export type UsageRecord = {
   agent: AgentName;
@@ -22,13 +24,20 @@ export type RunUsage = {
   records: UsageRecord[];
 };
 
-export type ToolDefinition = {
+export type FunctionToolDefinition = {
   type: "function";
   name: string;
   description: string;
   parameters: Record<string, unknown>;
   strict?: boolean;
 };
+
+export type BuiltInToolDefinition = {
+  /** A provider-native Responses API tool, such as OpenAI web search. */
+  type: "web_search";
+};
+
+export type ToolDefinition = FunctionToolDefinition | BuiltInToolDefinition;
 
 export type ToolHandler = (argumentsJson: string) => Promise<unknown>;
 
@@ -46,10 +55,17 @@ export type AgentProgressEvent = {
 };
 
 export type GeneratedAssetEvent = {
-  type: "character" | "collectible";
+  type: "character" | "character_sprite" | "collectible";
   name: string;
   assetId?: string;
   imageDataUrls: string[];
+  frames?: Array<{ frameKey: string; dataUrl: string }>;
+  metadata?: unknown;
+};
+
+export type GeneratedAssetFrame = {
+  frameKey: string;
+  dataUrl: string;
 };
 
 export type AgentExecutionResult<T> = {

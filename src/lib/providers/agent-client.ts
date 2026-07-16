@@ -16,6 +16,7 @@ export type JsonSchema = {
 
 export type AgentGeneration<T> = {
   output: T;
+  citations?: Array<{ url: string; title?: string }>;
   provider: string;
   model: string;
   inputTokens: number;

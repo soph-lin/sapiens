@@ -110,3 +110,14 @@ export type Presentable =
   | PresentableText
   | PresentableChoiceView
   | PresentableEnd;
+
+export type DialogueHistoryEntry = {
+  nodeId: string;
+  kind: Presentable["kind"];
+  speaker?: string;
+  title?: string;
+  text: string;
+  choices?: string[];
+  selectedChoice?: string;
+  state: State;
+};

@@ -13,8 +13,15 @@ import { loadAgentPrompt, wikipediaTools } from "./agents";
 export type AdventurePlan = {
   maxTurns: number;
   maxCharacters: number;
-  synopsis: Record<string, unknown>;
+  synopsis: {
+    premise: string;
+    eventSpine: string;
+    playerGoal: string;
+    learningFocus: string;
+    [key: string]: unknown;
+  };
   characters: Array<{ name: string; role: string; desc: string }>;
+  starCharacter: { name: string; role: string; desc: string } | null;
   endings: unknown[];
   collectible: { name: string; desc: string };
   scenes: unknown[];
@@ -98,7 +105,17 @@ export async function director(
       schema: {
         type: "object",
         properties: {
-          synopsis: { type: "object" },
+          synopsis: {
+            type: "object",
+            properties: {
+              premise: { type: "string", minLength: 1 },
+              eventSpine: { type: "string", minLength: 1 },
+              playerGoal: { type: "string", minLength: 1 },
+              learningFocus: { type: "string", minLength: 1 },
+            },
+            required: ["premise", "eventSpine", "playerGoal", "learningFocus"],
+            additionalProperties: true,
+          },
           maxTurns: { type: "integer", minimum: 1 },
           maxCharacters: { type: "integer", minimum: 1 },
           characters: {
@@ -114,6 +131,21 @@ export async function director(
               additionalProperties: false,
             },
           },
+          starCharacter: {
+            anyOf: [
+              {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  role: { type: "string" },
+                  desc: { type: "string" },
+                },
+                required: ["name", "role", "desc"],
+                additionalProperties: false,
+              },
+              { type: "null" },
+            ],
+          },
           endings: { type: "array", items: { type: "object" } },
           collectible: {
             type: "object",
@@ -126,7 +158,7 @@ export async function director(
           },
           scenes: { type: "array", items: { type: "object" } },
         },
-        required: ["maxTurns", "maxCharacters", "synopsis", "characters", "endings", "collectible", "scenes"],
+        required: ["maxTurns", "maxCharacters", "synopsis", "characters", "starCharacter", "endings", "collectible", "scenes"],
         additionalProperties: false,
       },
     },
@@ -144,8 +176,30 @@ export async function director(
       );
     }
 
+    const starCharacter = output.starCharacter ?? null;
+    if (starCharacter) {
+      const selectedCharacter = output.characters.find(
+        (character) =>
+          character.name.trim().toLocaleLowerCase() ===
+          starCharacter.name.trim().toLocaleLowerCase(),
+      );
+      if (!selectedCharacter) {
+        throw new Error(
+          `Director starCharacter must match a selected character: ${starCharacter.name}`,
+        );
+      }
+    }
+    context.emitProgress({
+      agent: "director",
+      phase: "agent",
+      message: starCharacter
+        ? `Selected ${starCharacter.name} as star character...`
+        : "No real people found in the historical event; no star character will be created.",
+    });
+
     return {
       ...output,
+      starCharacter,
       maxTurns: limits.maxTurns,
       maxCharacters: limits.maxCharacters,
     };

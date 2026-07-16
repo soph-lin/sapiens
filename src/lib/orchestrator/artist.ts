@@ -6,8 +6,9 @@ import {
   type AgentExecutionOptions,
 } from "./agent-context";
 import { loadAgentPrompt, pixelLabTools } from "./agents";
+import type { GeneratedAssetFrame } from "./types";
 
-export type ArtistAssetType = "character" | "collectible";
+export type ArtistAssetType = "character" | "character_sprite" | "collectible";
 
 export type ArtistAssetBrief = {
   name: string;
@@ -16,6 +17,7 @@ export type ArtistAssetBrief = {
 
 export type ArtistPlan = {
   characters: ArtistAssetBrief[];
+  starCharacter: ArtistAssetBrief | null;
   collectible: ArtistAssetBrief;
 };
 
@@ -33,6 +35,15 @@ type ArtistAssetOutput = {
 
 function storedAssetDataUrl(asset: { mimeType: string; data: Uint8Array }): string {
   return `data:${asset.mimeType};base64,${Buffer.from(asset.data).toString("base64")}`;
+}
+
+function storedAssetFrames(asset: {
+  frames?: Array<{ frameKey: string; mimeType: string; data: Uint8Array }>;
+}): GeneratedAssetFrame[] {
+  return (asset.frames ?? []).map((frame) => ({
+    frameKey: frame.frameKey,
+    dataUrl: `data:${frame.mimeType};base64,${Buffer.from(frame.data).toString("base64")}`,
+  }));
 }
 
 function imageDataUrls(value: unknown): string[] {
@@ -63,10 +74,15 @@ async function generateAsset(
 ): Promise<Record<string, unknown>> {
   const result = await withAgentRetries(context, "artist", async ({ previousError }) => {
     const generatedImages: string[] = [];
+    const generatedFrames: GeneratedAssetFrame[] = [];
+    let generatedMetadata: unknown;
     context.emitProgress({
       agent: "artist",
       phase: "agent",
-      message: `Generating ${type} artwork for ${brief.name}…`,
+      message:
+        type === "character_sprite"
+          ? `Generating sprite for ${brief.name}...`
+          : `Generating ${type} artwork for ${brief.name}…`,
     });
     const generation = await context.modelClient("artist").generateJson<ArtistAssetOutput>({
       agent: "artist",
@@ -94,6 +110,22 @@ async function generateAsset(
           generatedImages.push(...imageDataUrls(result));
           return result;
         },
+        pixellab_create_character: async (raw) => {
+          context.emitProgress({
+            agent: "artist",
+            phase: "tool",
+            message: `Creating top-down sprite for ${brief.name}...`,
+            tool: "pixellab_create_character",
+          });
+          const result = await context.pixellab.createCharacter(
+            JSON.parse(raw).description,
+            brief.name,
+          );
+          generatedFrames.push(...(result.frames ?? []));
+          generatedImages.push(...(result.frames ?? []).map(({ dataUrl }) => dataUrl));
+          generatedMetadata = result.metadata;
+          return result;
+        },
         pixellab_create_collectible: async (raw) => {
           context.emitProgress({
             agent: "artist",
@@ -117,13 +149,28 @@ async function generateAsset(
       },
     });
 
-    return { output: generation.output, imageDataUrls: generatedImages };
+    return {
+      output: generation.output,
+      imageDataUrls: generatedImages,
+      frames: generatedFrames,
+      metadata: generatedMetadata,
+    };
   });
 
+  context.emitProgress({
+    agent: "artist",
+    phase: "agent",
+    message:
+      type === "character_sprite"
+        ? `Sprite successfully generated for ${brief.name}.`
+        : `${type} artwork successfully generated for ${brief.name}.`,
+  });
   options.onAsset?.({
     type,
     name: brief.name,
     imageDataUrls: result.imageDataUrls,
+    frames: result.frames.length ? result.frames : undefined,
+    metadata: result.metadata,
   });
   return result.output.asset;
 }
@@ -141,6 +188,14 @@ export async function artist(
   const existingByName = new Map<string, (typeof existing)[number]>();
   for (const asset of existing) {
     if (!existingByName.has(asset.name)) existingByName.set(asset.name, asset);
+  }
+
+  const existingSprites = plan.starCharacter
+    ? await context.characterAssetStore.findSpriteByNames([plan.starCharacter.name])
+    : [];
+  const existingSpriteByName = new Map<string, (typeof existingSprites)[number]>();
+  for (const asset of existingSprites) {
+    if (!existingSpriteByName.has(asset.name)) existingSpriteByName.set(asset.name, asset);
   }
 
   for (const character of plan.characters) {
@@ -166,6 +221,43 @@ export async function artist(
     }
     const asset = await generateAsset(context, "character", character, options);
     assets.push({ type: "character", name: character.name, asset });
+  }
+
+  if (plan.starCharacter) {
+    const storedSprite = existingSpriteByName.get(plan.starCharacter.name);
+    if (storedSprite) {
+      const frames = storedAssetFrames(storedSprite);
+      context.emitProgress({
+        agent: "artist",
+        phase: "agent",
+        message: `Reusing existing sprite for ${plan.starCharacter.name}.`,
+      });
+      options.onAsset?.({
+        type: "character_sprite",
+        name: plan.starCharacter.name,
+        assetId: storedSprite.id,
+        imageDataUrls: frames.length ? frames.map(({ dataUrl }) => dataUrl) : [storedAssetDataUrl(storedSprite)],
+        frames: frames.length ? frames : undefined,
+        metadata: storedSprite.metadata,
+      });
+      assets.push({
+        type: "character_sprite",
+        name: plan.starCharacter.name,
+        asset: storedSprite as unknown as Record<string, unknown>,
+      });
+    } else {
+      const sprite = await generateAsset(
+        context,
+        "character_sprite",
+        plan.starCharacter,
+        options,
+      );
+      assets.push({
+        type: "character_sprite",
+        name: plan.starCharacter.name,
+        asset: sprite,
+      });
+    }
   }
 
   const collectible = await generateAsset(

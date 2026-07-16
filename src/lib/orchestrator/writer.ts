@@ -65,6 +65,17 @@ function deriveCharacterAssetNeeds(
     .filter((character) => characterAppearsInStory(character.name, dialogue));
 }
 
+function includeStarCharacter(
+  characters: ArtistAssetBrief[],
+  starCharacter: ArtistAssetBrief | null,
+): ArtistAssetBrief[] {
+  if (!starCharacter) return characters;
+  const normalizedName = starCharacter.name.toLocaleLowerCase();
+  return characters.some((character) => character.name.toLocaleLowerCase() === normalizedName)
+    ? characters
+    : [...characters, starCharacter];
+}
+
 /** Convert Anthropic's fixed-shape provider transport back to the runtime story shape. */
 function normalizeWriterDialogue(value: unknown): unknown {
   if (!isRecord(value) || !Array.isArray(value.nodes)) return value;
@@ -119,6 +130,10 @@ export async function writer(
     throw new Error("Writer input.characters must be an array");
   }
   const collectible = assetBrief(directorPlan.collectible, "Writer input.collectible");
+  const starCharacter =
+    directorPlan.starCharacter === null || directorPlan.starCharacter === undefined
+      ? null
+      : assetBrief(directorPlan.starCharacter, "Writer input.starCharacter");
 
   const inputMaxCharacters = directorPlan.maxCharacters;
   const requestedMaxCharacters =
@@ -175,7 +190,10 @@ export async function writer(
     });
     const output = generation.output;
     const dialogue = validateStory(normalizeWriterDialogue(output.dialogue));
-    const charactersNeedingAssets = deriveCharacterAssetNeeds(characters, dialogue);
+    const charactersNeedingAssets = includeStarCharacter(
+      deriveCharacterAssetNeeds(characters, dialogue),
+      starCharacter,
+    );
     context.emitProgress({
       agent: "writer",
       phase: "agent",
@@ -187,6 +205,7 @@ export async function writer(
       embellish: output.embellish,
       need_assets: {
         characters: charactersNeedingAssets,
+        starCharacter,
         collectible,
       },
     };

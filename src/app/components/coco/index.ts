@@ -1,5 +1,5 @@
 export { Coco } from "./Coco";
-export type { CocoExpression } from "./Coco";
+export type { CocoColor, CocoExpression } from "./Coco";
 export { Snoring, Hearts } from "./effects";
 export {
   COCO_CX,

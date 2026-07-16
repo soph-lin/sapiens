@@ -1,5 +1,5 @@
 import { ORCHESTRATOR_CONFIG } from "../orchestrator/config";
-import type { ToolDefinition } from "../orchestrator/types";
+import type { FunctionToolDefinition } from "../orchestrator/types";
 import type {
   AgentClient,
   AgentGeneration,
@@ -33,12 +33,14 @@ type AnthropicTool = {
 
 function anthropicTools(input: AgentGenerationRequest, outputTool: AnthropicTool) {
   return [
-    ...(input.tools ?? []).map((tool) => toolToAnthropic(tool)),
+    ...(input.tools ?? [])
+      .filter((tool): tool is FunctionToolDefinition => tool.type === "function")
+      .map((tool) => toolToAnthropic(tool)),
     outputTool,
   ];
 }
 
-function toolToAnthropic(tool: ToolDefinition): AnthropicTool {
+function toolToAnthropic(tool: FunctionToolDefinition): AnthropicTool {
   return {
     name: tool.name,
     description: tool.description,
@@ -81,7 +83,9 @@ export class AnthropicClient implements AgentClient {
       strict: input.schema.strict,
     };
     const tools = input.nativeStructuredOutput
-      ? (input.tools ?? []).map(toolToAnthropic)
+      ? (input.tools ?? [])
+          .filter((tool): tool is FunctionToolDefinition => tool.type === "function")
+          .map(toolToAnthropic)
       : anthropicTools(input, outputTool);
     const startedAt = new Date().toISOString();
     const messages: Array<Record<string, unknown>> = [

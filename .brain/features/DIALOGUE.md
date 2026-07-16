@@ -114,7 +114,16 @@ When changing the dialogue JSON shape, update and verify these dependencies toge
 6. `src/lib/prompts/WRITER.md` — JSON examples, field instructions, and authoring-archetype guidance.
 7. `src/lib/orchestrator/writer.ts` — only when the Writer's top-level output contract changes; dialogue node changes normally flow through the imported schema automatically.
 8. `src/lib/content/canon/` and `src/lib/content/voyages/` — existing story fixtures that use the changed shape.
-9. Dialogue UI consumers under `src/app/components/dialogue/` — when presentation fields or runtime views change.
+9. Dialogue UI consumers under `src/app/components/dialogue/` and feature consumers under
+   `src/app/components/fieldnotes/` — when presentation fields or runtime views change.
+
+## UI boundary
+
+`DialogueBox` only renders a prepared `Presentable` view. `DialoguePanel` adds shared
+visual presentation such as the header, portrait, atmosphere, and box. Higher-level
+wrappers own dialogue engines and providers: `StoryDialogue` owns story sessions,
+the sail-only `components/fieldnotes/FieldCompanion` owns Coco and notes surfaces, and the map
+NPC hook owns actor conversations.
 
 After editing, run the type checker and linter, validate existing content through `validateStory`,
 and inspect any affected dialogue UI paths. Keep `DIALOGUE.md` and `WRITER.md` synchronized with

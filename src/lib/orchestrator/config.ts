@@ -43,6 +43,16 @@ export const AGENT_CONFIG: Record<ConfiguredAgentName, {
     model: "gpt-5.6-luna",
     promptFile: "ARTIST.md",
   },
+  coco: {
+    provider: "openai",
+    model: "gpt-5.6-luna",
+    promptFile: "COCO.md",
+  },
+  actor: {
+    provider: "openai",
+    model: "gpt-5.6-luna",
+    promptFile: "ACTOR.md",
+  },
 };
 
 export const ORCHESTRATOR_CONFIG = {

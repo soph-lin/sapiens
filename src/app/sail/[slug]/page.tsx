@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { DialoguePanel } from "@/app/components/dialogue";
+import { StoryDialogue } from "@/app/components/dialogue";
 import { validateStoryPayload } from "@/lib/dialogue";
 import { prisma } from "@/lib/prisma";
 
@@ -25,7 +25,7 @@ export default async function StoryPage({ params }: StoryPageProps) {
   const storyJson = validateStoryPayload(story.storyJson);
 
   return (
-    <DialoguePanel
+    <StoryDialogue
       scenarioId={`story-${story.slug}`}
       story={storyJson}
       theme="vanilla"

@@ -44,6 +44,9 @@ type DialogueBoxProps = {
   onRestart: () => void;
   /** Body text size. Default `lg`. */
   size?: DialogueBoxSize;
+  /** Hide the built-in hint when a caller renders it in a separate region. */
+  showHint?: boolean;
+  onTypingChange?: (done: boolean) => void;
 };
 
 export function DialogueBox({
@@ -54,6 +57,8 @@ export function DialogueBox({
   onChoose,
   onRestart,
   size = "lg",
+  showHint = true,
+  onTypingChange,
 }: DialogueBoxProps) {
   if (view.kind === "text") {
     return (
@@ -71,6 +76,8 @@ export function DialogueBox({
           onAdvance();
         }}
         typingGateRef={typingGateRef}
+        showHint={showHint}
+        onTypingChange={onTypingChange}
       />
     );
   }
@@ -119,6 +126,8 @@ function TextBeat({
   typingGateRef,
   theme,
   size,
+  showHint,
+  onTypingChange,
 }: {
   speaker?: string;
   text: string;
@@ -127,9 +136,14 @@ function TextBeat({
   typingGateRef: TypingGateRef;
   theme: DialogueTheme;
   size: DialogueBoxSize;
+  showHint: boolean;
+  onTypingChange?: (done: boolean) => void;
 }) {
   const { displayed, done, skip } = useTypewriter(text);
   useTypingGate(typingGateRef, done, skip);
+  useEffect(() => {
+    onTypingChange?.(done);
+  }, [done, onTypingChange]);
 
   return (
     <button
@@ -148,11 +162,13 @@ function TextBeat({
         {displayed}
         {!done ? <TypeCaret theme={theme} /> : null}
       </p>
-      {canAdvance && done ? (
-        <p className={theme.hint}>Continue — space</p>
-      ) : (
-        <p className={theme.hint}>{done ? "" : "Skip to end — space"}</p>
-      )}
+      {showHint ? (
+        canAdvance && done ? (
+          <p className={theme.hint}>Continue — space</p>
+        ) : (
+          <p className={theme.hint}>{done ? "" : "Skip to end — space"}</p>
+        )
+      ) : null}
     </button>
   );
 }

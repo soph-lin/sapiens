@@ -77,6 +77,7 @@ function distToSeg(
 }
 
 export type CocoExpression = "sleeping" | "idle" | "happy" | "talking";
+export type CocoColor = "default" | "gray";
 
 function restPose(expression: CocoExpression) {
   if (
@@ -464,10 +465,24 @@ type CocoProps = {
    * Rubbing while idle promotes to happy automatically.
    */
   expression?: CocoExpression;
+  /** Body palette. The default preserves Coco's original warm ivory appearance. */
+  color?: CocoColor;
+  /** Optional normalized placement within the containing stage. */
+  center?: { x: number; y: number };
+  /** Optional size multiplier. The default preserves the original scene scale. */
+  scale?: number;
 };
 
 /** Coco — pixel blob companion. Drag to rotate / rub in 3D. */
-export function Coco({ expression = "sleeping" }: CocoProps) {
+export function Coco({
+  expression = "sleeping",
+  color = "default",
+  center,
+  scale: scaleProp,
+}: CocoProps) {
+  const centerX = center?.x ?? COCO_CX;
+  const centerY = center?.y ?? COCO_CY;
+  const cocoScale = scaleProp ?? COCO_SCALE;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [rubHappy, setRubHappy] = useState(false);
   const [exprProp, setExprProp] = useState(expression);
@@ -526,8 +541,9 @@ export function Coco({ expression = "sleeping" }: CocoProps) {
 
     const resize = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
-      w = window.innerWidth;
-      h = window.innerHeight;
+      const parent = canvas.parentElement;
+      w = parent?.clientWidth || window.innerWidth;
+      h = parent?.clientHeight || window.innerHeight;
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
       canvas.style.width = `${w}px`;
@@ -537,9 +553,9 @@ export function Coco({ expression = "sleeping" }: CocoProps) {
     };
 
     const seedForm = () => {
-      const scale = Math.min(w, h) * COCO_SCALE;
-      const cx = w * COCO_CX;
-      const cy = h * COCO_CY;
+      const scale = Math.min(w, h) * cocoScale;
+      const cx = w * centerX;
+      const cy = h * centerY;
       formDots = mesh.map((p) => {
         let lx = p.nx;
         let ly = p.ny;
@@ -562,9 +578,9 @@ export function Coco({ expression = "sleeping" }: CocoProps) {
     };
 
     const project = (d: FormDot, t: number) => {
-      const scale = Math.min(w, h) * COCO_SCALE;
-      const cx = w * COCO_CX;
-      const cy = h * COCO_CY;
+      const scale = Math.min(w, h) * cocoScale;
+      const cx = w * centerX;
+      const cy = h * centerY;
 
       const motion = squishMotion(live);
       // Soft squash & stretch on body + ears (tail keeps its own undulation)
@@ -649,10 +665,12 @@ export function Coco({ expression = "sleeping" }: CocoProps) {
       }
 
       // Ears + tail share body grain (same creature)
-      const base = (200 + d.shade * 45) * lit;
-      const r = Math.floor(Math.min(255, base));
-      const g = Math.floor(Math.min(255, base * 0.98));
-      const b = Math.floor(Math.min(255, base * 0.93 + 6));
+      const base = (color === "gray" ? 142 : 200) + d.shade * (color === "gray" ? 38 : 45);
+      const r = Math.floor(Math.min(255, base * lit));
+      const g = Math.floor(Math.min(255, base * lit * (color === "gray" ? 1 : 0.98)));
+      const b = Math.floor(
+        Math.min(255, base * lit * (color === "gray" ? 1.02 : 0.93) + (color === "gray" ? 2 : 6)),
+      );
       const alpha =
         d.kind === "tail" ? 0.68 + d.shade * 0.2 : 0.72 + d.shade * 0.2;
       return `rgba(${r},${g},${b},${alpha})`;
@@ -788,6 +806,8 @@ export function Coco({ expression = "sleeping" }: CocoProps) {
     resize();
     raf = requestAnimationFrame(frame);
     window.addEventListener("resize", resize);
+    const resizeObserver = new ResizeObserver(resize);
+    if (canvas.parentElement) resizeObserver.observe(canvas.parentElement);
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerup", onPointerUp);
@@ -797,13 +817,14 @@ export function Coco({ expression = "sleeping" }: CocoProps) {
       cancelAnimationFrame(raf);
       if (happyTimer) window.clearTimeout(happyTimer);
       window.removeEventListener("resize", resize);
+      resizeObserver.disconnect();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerUp);
     };
     // Base prop only — happy is applied in-place without remounting
-  }, [expression]);
+  }, [cocoScale, color, centerX, centerY, expression]);
 
   return (
     <>

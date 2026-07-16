@@ -2,7 +2,12 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { DialogueEngine, type State } from "@/lib/dialogue";
+import {
+  DialogueEngine,
+  type DialogueHistoryEntry,
+  type Presentable,
+  type State,
+} from "@/lib/dialogue";
 import { setGameSnapshot } from "@/lib/game/state";
 import type { TypingGateRef } from "./typewriter";
 
@@ -50,11 +55,44 @@ function toastStateDiff(before: State, after: State): void {
 
 function bootEngine(story: unknown) {
   const engine = new DialogueEngine(story);
+  const view = engine.present();
+  const state = engine.getState();
   return {
     engine,
-    view: engine.present(),
-    state: engine.getState(),
+    view,
+    state,
     hasStats: engine.hasStats(),
+    dialogueHistory: [historyEntry(view, state)],
+  };
+}
+
+function historyEntry(view: Presentable, state: State): DialogueHistoryEntry {
+  if (view.kind === "choice") {
+    return {
+      nodeId: view.id,
+      kind: view.kind,
+      text: view.prompt ?? "What do you do?",
+      choices: view.choices.map((choice) => choice.label),
+      state,
+    };
+  }
+
+  if (view.kind === "end") {
+    return {
+      nodeId: view.id,
+      kind: view.kind,
+      title: view.title,
+      text: view.text,
+      state,
+    };
+  }
+
+  return {
+    nodeId: view.id,
+    kind: view.kind,
+    speaker: view.speaker,
+    text: view.text,
+    state,
   };
 }
 
@@ -74,6 +112,7 @@ export function useDialogueSession({
       view: boot.view,
       state: boot.state,
       hasStats: boot.hasStats,
+      dialogueHistory: boot.dialogueHistory,
       revealKey: 0,
     };
   });
@@ -87,11 +126,12 @@ export function useDialogueSession({
       view: boot.view,
       state: boot.state,
       hasStats: boot.hasStats,
+      dialogueHistory: boot.dialogueHistory,
       revealKey: 0,
     });
   }
 
-  const { engine, view, state, hasStats, revealKey } = session;
+  const { engine, view, state, hasStats, dialogueHistory, revealKey } = session;
   const typingGateRef: TypingGateRef = useRef({
     done: true,
     skip: () => {},
@@ -106,13 +146,23 @@ export function useDialogueSession({
     });
   }, [scenarioId, view, state, revealKey, engine]);
 
-  const publish = (nextEngine: DialogueEngine) => {
+  const publish = (nextEngine: DialogueEngine, selectedChoice?: string) => {
+    const nextView = nextEngine.present();
+    const nextState = nextEngine.getState();
     setSession((prev) => ({
       ...prev,
       engine: nextEngine,
-      view: nextEngine.present(),
-      state: nextEngine.getState(),
+      view: nextView,
+      state: nextState,
       hasStats: nextEngine.hasStats(),
+      dialogueHistory: [
+        ...prev.dialogueHistory.map((entry, index) =>
+          index === prev.dialogueHistory.length - 1 && selectedChoice
+            ? { ...entry, selectedChoice }
+            : entry,
+        ),
+        historyEntry(nextView, nextState),
+      ],
       revealKey: prev.revealKey + 1,
     }));
   };
@@ -130,13 +180,26 @@ export function useDialogueSession({
   const choose = (index: number) => {
     if (engine.isEnded()) return;
     const before = engine.getState();
+    const current = engine.present();
+    const selectedChoice = current.kind === "choice"
+      ? current.choices.find((choice) => choice.index === index)?.label
+      : undefined;
     engine.choose(index);
     toastStateDiff(before, engine.getState());
-    publish(engine);
+    publish(engine, selectedChoice);
   };
 
   const restart = () => {
-    publish(bootEngine(story).engine);
+    const boot = bootEngine(story);
+    setSession((prev) => ({
+      ...prev,
+      engine: boot.engine,
+      view: boot.view,
+      state: boot.state,
+      hasStats: boot.hasStats,
+      dialogueHistory: boot.dialogueHistory,
+      revealKey: prev.revealKey + 1,
+    }));
   };
 
   const handleContinueIntent = useEffectEvent(() => {
@@ -150,6 +213,7 @@ export function useDialogueSession({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== " " && event.key !== "Enter") return;
+      if (document.body.dataset.cocoLayerOpen === "true") return;
       const el = event.target as HTMLElement | null;
       if (!el) return;
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return;
@@ -170,6 +234,7 @@ export function useDialogueSession({
     typingGateRef,
     advance,
     choose,
+    dialogueHistory,
     restart,
   };
 }

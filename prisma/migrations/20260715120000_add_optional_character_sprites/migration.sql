@@ -1,0 +1,8 @@
+ALTER TYPE "AssetType" ADD VALUE 'CHARACTER_SPRITE';
+
+ALTER TABLE "Character" ADD COLUMN "spriteAssetId" TEXT;
+
+ALTER TABLE "Character"
+ADD CONSTRAINT "Character_spriteAssetId_fkey"
+FOREIGN KEY ("spriteAssetId") REFERENCES "Asset"("id")
+ON DELETE SET NULL ON UPDATE CASCADE;

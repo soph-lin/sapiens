@@ -16,6 +16,11 @@ type OpenAIResponse = {
     content?: Array<{
       type?: string;
       text?: string;
+      annotations?: Array<{
+        type?: string;
+        url?: string;
+        title?: string;
+      }>;
     }>;
   }>;
   usage?: {
@@ -24,6 +29,21 @@ type OpenAIResponse = {
     total_tokens?: number;
   };
 };
+
+function responseCitations(response: OpenAIResponse): Array<{ url: string; title?: string }> {
+  const citations = (response.output ?? [])
+    .flatMap((item) => item.content ?? [])
+    .flatMap((item) => item.annotations ?? [])
+    .filter(
+      (annotation): annotation is { type: string; url: string; title?: string } =>
+        annotation.type === "url_citation" && typeof annotation.url === "string",
+    )
+    .map(({ url, title }) => ({ url, title }));
+
+  return Array.from(
+    new Map(citations.map((citation) => [citation.url, citation])).values(),
+  );
+}
 
 function traceResponse(response: OpenAIResponse) {
   return {
@@ -63,6 +83,7 @@ export class OpenAIClient implements AgentClient {
     let totalOutputTokens = 0;
     let totalTokens = 0;
     let toolCalls = 0;
+    const citations = new Map<string, { url: string; title?: string }>();
     const startedAt = new Date().toISOString();
 
     for (let round = 0; round < ORCHESTRATOR_CONFIG.maxToolRounds; round += 1) {
@@ -78,7 +99,10 @@ export class OpenAIClient implements AgentClient {
         model: input.model,
         instructions: input.instructions,
         input: requestInput,
-        tools: input.tools,
+        ...(input.tools?.length ? { tools: input.tools } : {}),
+        ...(input.maxOutputTokens
+          ? { max_output_tokens: input.maxOutputTokens }
+          : {}),
         text: {
           format: {
             type: "json_schema",
@@ -91,6 +115,9 @@ export class OpenAIClient implements AgentClient {
       };
       input.trace?.({ agent: input.agent, kind: "request", payload: requestBody });
       const response = await this.request<OpenAIResponse>(requestBody, input.signal);
+      for (const citation of responseCitations(response)) {
+        citations.set(citation.url, citation);
+      }
       input.trace?.({
         agent: input.agent,
         kind: "response",
@@ -137,6 +164,7 @@ export class OpenAIClient implements AgentClient {
         input.usage.add(record);
         return {
           output: JSON.parse(outputText) as T,
+          citations: Array.from(citations.values()),
           provider: record.provider,
           model: record.model ?? input.model,
           inputTokens: record.inputTokens,

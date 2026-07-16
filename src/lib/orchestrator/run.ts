@@ -1,6 +1,6 @@
 import { artist } from "./artist";
 import { createAgentContext } from "./agent-context";
-import { director } from "./director";
+import { director, type AdventurePlan } from "./director";
 import { researcher } from "./researcher";
 import { writer } from "./writer";
 import type { StoryLimits } from "./config";
@@ -17,6 +17,7 @@ export type AdventureRunInput = {
 export type AdventureRunResult = {
   research: unknown;
   director: unknown;
+  synopsis: AdventurePlan["synopsis"];
   writer: unknown;
   artist: unknown;
   usage: RunUsage;
@@ -46,6 +47,7 @@ export async function runAdventurePipeline(
   return {
     research: researchOutput,
     director: directorOutput,
+    synopsis: directorOutput.synopsis,
     writer: writerOutput,
     artist: artistOutput,
     usage: context.usage.report(),

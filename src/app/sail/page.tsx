@@ -1,10 +1,10 @@
 import { GRIFFIN_WHARF_ART } from "@/lib/content/art/griffin-wharf";
 import bostonTeaParty from "@/lib/content/voyages/boston-tea-party.json";
-import { DialoguePanel } from "@/app/components/dialogue";
+import { StoryDialogue } from "@/app/components/dialogue";
 
 export default function GoPage() {
   return (
-    <DialoguePanel
+    <StoryDialogue
       scenarioId="boston-tea-party"
       story={bostonTeaParty}
       theme="vanilla"

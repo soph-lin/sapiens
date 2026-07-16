@@ -5,7 +5,7 @@ import { ShoppingBag } from "lucide-react";
 import { Toaster } from "react-hot-toast";
 import { Coco } from "@/app/components/coco";
 import {
-  DialogueBox,
+  DialoguePanel,
   THEMES,
   useDialogueSession,
 } from "@/app/components/dialogue";
@@ -102,20 +102,17 @@ export default function Lounge() {
 
       {!tutorialDone ? (
         <main className="pointer-events-none relative z-10 mx-auto flex min-h-dvh w-full max-w-2xl flex-col justify-end px-6 pb-10 pt-[48vh] sm:px-8 sm:pb-14">
-          <div
-            key={revealKey}
+          <DialoguePanel
             className="pointer-events-auto flex min-h-[28vh] flex-col"
-          >
-            <DialogueBox
-              view={view}
-              theme={theme}
-              size="md"
-              typingGateRef={typingGateRef}
-              onAdvance={advance}
-              onChoose={choose}
-              onRestart={restart}
-            />
-          </div>
+            view={view}
+            theme="space"
+            size="md"
+            typingGateRef={typingGateRef}
+            onAdvance={advance}
+            onChoose={choose}
+            onRestart={restart}
+            revealKey={revealKey}
+          />
         </main>
       ) : null}
     </div>

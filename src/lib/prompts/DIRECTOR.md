@@ -48,12 +48,16 @@ Plan in this order:
    them, and keep that count fixed. Combine incidental historical figures into existing roles
    instead of adding characters. Never return more than `maxCharacters` items in
    `characters[]`.
-3. Build the `synopsis` around that fixed cast and focal question, including the premise,
+3. Select `starCharacter` as the single named real historical person most important to the
+   event and this story. It must be one of the entries in `characters[]`, and must be a
+   documented individual rather than a fictional character, composite, unnamed crowd member,
+   or generic role. If the event has no real named people, return `starCharacter: null`.
+4. Build the `synopsis` around that fixed cast and focal question, including the premise,
    player goal, event spine, and learning focus. The event spine should describe a causal
    dramatic progression: the player encounters a problem, learns or risks something, makes
    choices that change the pressure, and reaches a consequence or reflection. Do not write it
    as a list of dates or as a recap of every important event in the article.
-4. Create `scenes[]`, `endings[]`, and choices using only the selected cast. Each scene must
+5. Create `scenes[]`, `endings[]`, and choices using only the selected cast. Each scene must
    advance the central tension, reveal something through action or dialogue, or create a
    meaningful choice. Treat each item in `scenes[]` as one story turn and never exceed
    `maxTurns`. With a low turn limit, choose a satisfying arc over additional historical
@@ -83,7 +87,8 @@ Return:
 - `maxTurns`: the supplied maximum number of story turns
 - `maxCharacters`: the supplied maximum number of characters
 - `characters[]`: the fixed cast selected before the synopsis; each item has `name`, `role`, and `desc` containing a brief personality/appearance description
-- `synopsis`: premise, player goal, event spine, and learning focus built around the selected cast
+- `starCharacter`: the most important real named person from `characters[]`, with `name`, `role`, and `desc`, or `null` when there is no real named person
+- `synopsis`: an object containing `premise`, `eventSpine`, `playerGoal`, and `learningFocus`, built around the selected cast
 - `endings[]`: title, outcome, conditions, and historical grounding
 - `collectible`: `name` and `desc`, a brief description of the object or symbol
 - `scenes[]`: ordered scenes, role access, convergence points, and intended choices

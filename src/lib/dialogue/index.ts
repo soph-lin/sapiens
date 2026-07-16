@@ -4,6 +4,7 @@ export type {
   Choice,
   ChoiceNode,
   Condition,
+  DialogueHistoryEntry,
   Effect,
   EndNode,
   Node,

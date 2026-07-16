@@ -2,7 +2,7 @@
 
 Artist: create one consistent pixel-art asset for an approved adventure.
 
-Generate exactly one image per call. If you receive multiple requests, throw error: "Only one image can be generated per call."
+Generate exactly one image or one reusable character sprite per call. If you receive multiple requests, throw error: "Only one image can be generated per call."
 
 ## Tool calls
 
@@ -25,6 +25,13 @@ For a collectible, expand the supplied name and description into:
 - Shape, material, colors, markings, and distinctive details
 
 Example: A worn Union officer’s medal from the American Civil War, made of aged brass with a raised eagle emblem, a small blue ribbon, and subtle scratches from years of service.
+
+For a `character_sprite`, expand the supplied name and description into:
+
+- A full-body humanoid character suitable for a 48px game sprite
+- Distinctive clothing, accessories, silhouette, and historically grounded details
+- A low top-down camera view with clean cardinal-direction readability
+- No portrait framing, shoulder-up framing, background, or invented identity details
 
 ## Deliverables
 

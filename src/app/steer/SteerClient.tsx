@@ -20,7 +20,7 @@ import SteerShaderBackground from "@/app/components/steer/SteerShaderBackground"
 import { DEFAULT_STORY_LIMITS, ORCHESTRATOR_CONFIG } from "@/lib/orchestrator/config";
 
 type AgentName = "researcher" | "director" | "writer" | "artist";
-type ArtistType = "character" | "collectible";
+type ArtistType = "character" | "character_sprite" | "collectible";
 type DirectorLimits = {
   maxTurns: number;
   maxCharacters: number;
@@ -32,7 +32,9 @@ type GeneratedImage = {
   type: ArtistType;
   name: string;
   url: string;
+  frameKey?: string;
   assetId?: string;
+  metadata?: unknown;
 };
 
 type RunAsset = GeneratedImage;
@@ -50,10 +52,55 @@ type PanelState = {
   running: boolean;
 };
 
+type StoredRun = {
+  slug: string;
+  status: "ongoing" | "fail" | "succeed";
+  steering: { historicalEvent?: string; synopsisDirection?: string | null } | null;
+  storyConfig: Partial<DirectorLimits> | null;
+  progress: unknown;
+  usage: unknown;
+  error: string | null;
+  researcherOutput: unknown;
+  directorOutput: unknown;
+  writerOutput: unknown;
+  artistOutput: unknown;
+};
+
 const emptyPanel = (): PanelState => ({ input: "", output: "", tokens: null, error: "", running: false });
 
-function pretty(value: unknown) {
-  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+function pretty(value: unknown): string {
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 2) ?? "";
+}
+
+function parseStoredValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function AnimatedSpritePreview({ frames, name }: { frames: GeneratedImage[]; name: string }) {
+  const [frameIndex, setFrameIndex] = useState(0);
+
+  useEffect(() => {
+    if (frames.length < 2) return undefined;
+    const timer = window.setInterval(() => {
+      setFrameIndex((current) => (current + 1) % frames.length);
+    }, 420);
+    return () => window.clearInterval(timer);
+  }, [frames.length]);
+
+  const frame = frames[frameIndex % frames.length];
+  if (!frame) return null;
+  return (
+    <div className="overflow-hidden rounded-lg border border-cyan-200/20 bg-black/25 p-2">
+      <Image src={frame.url} alt={`${name} animated sprite`} width={192} height={192} unoptimized className="mx-auto aspect-square w-full object-contain [image-rendering:pixelated]" />
+      <p className="mt-1 text-center font-mono text-[9px] uppercase tracking-[.14em] text-cyan-200/45">South / rotating directions</p>
+    </div>
+  );
 }
 
 function parseSseBlock(block: string): { event: string; data: unknown } | null {
@@ -67,18 +114,20 @@ function parseSseBlock(block: string): { event: string; data: unknown } | null {
   return { event, data: JSON.parse(dataText) as unknown };
 }
 
-function TextArea({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
+function TextArea({ value, onChange, placeholder, readOnly = false }: { value: string; onChange: (value: string) => void; placeholder: string; readOnly?: boolean }) {
   return (
     <textarea
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
+      readOnly={readOnly}
       className="min-h-32 w-full rounded-xl border border-white/10 bg-black/30 p-3 font-mono text-xs text-white outline-none ring-emerald-300/40 placeholder:text-white/30 focus:ring-2"
     />
   );
 }
 
-export default function SteerClient() {
+export default function SteerClient({ runSlug }: { runSlug?: string }) {
+  const viewingRun = Boolean(runSlug);
   const [panels, setPanels] = useState<Record<AgentName, PanelState>>({
     researcher: emptyPanel(),
     director: emptyPanel(),
@@ -97,31 +146,85 @@ export default function SteerClient() {
   const [debugOpen, setDebugOpen] = useState(true);
   const [copied, setCopied] = useState<string | null>(null);
   const [runAllRunning, setRunAllRunning] = useState(false);
-  const [cachedInputsLoaded, setCachedInputsLoaded] = useState(false);
+  const [cachedInputsLoaded, setCachedInputsLoaded] = useState(() => viewingRun);
+  const [storedRun, setStoredRun] = useState<StoredRun | null>(null);
+  const [storedRunError, setStoredRunError] = useState<string | null>(null);
   const runAllAbortController = useRef<AbortController | null>(null);
+  const storedRunLoading = viewingRun && !storedRun && !storedRunError;
 
   useEffect(() => {
-    try {
-      // Hydrate the client-only fields from browser storage after the server render.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setRunAllHistoricalEvent(localStorage.getItem(HISTORICAL_EVENT_STORAGE_KEY) ?? "");
-      setRunAllSynopsis(localStorage.getItem(SYNOPSIS_STORAGE_KEY) ?? "");
-    } catch {
-      // Ignore storage failures such as private-browsing restrictions.
-    } finally {
-      setCachedInputsLoaded(true);
-    }
-  }, []);
+    if (runSlug) return undefined;
+    const timer = window.setTimeout(() => {
+      try {
+        // Hydrate the client-only fields from browser storage after the server render.
+        setRunAllHistoricalEvent(localStorage.getItem(HISTORICAL_EVENT_STORAGE_KEY) ?? "");
+        setRunAllSynopsis(localStorage.getItem(SYNOPSIS_STORAGE_KEY) ?? "");
+      } catch {
+        // Ignore storage failures such as private-browsing restrictions.
+      } finally {
+        setCachedInputsLoaded(true);
+      }
+    });
+    return () => window.clearTimeout(timer);
+  }, [runSlug]);
 
   useEffect(() => {
-    if (!cachedInputsLoaded) return;
+    if (!cachedInputsLoaded || viewingRun) return;
     try {
       localStorage.setItem(HISTORICAL_EVENT_STORAGE_KEY, runAllHistoricalEvent);
       localStorage.setItem(SYNOPSIS_STORAGE_KEY, runAllSynopsis);
     } catch {
       // Ignore storage failures such as private-browsing quota restrictions.
     }
-  }, [cachedInputsLoaded, runAllHistoricalEvent, runAllSynopsis]);
+  }, [cachedInputsLoaded, runAllHistoricalEvent, runAllSynopsis, viewingRun]);
+
+  useEffect(() => {
+    if (!runSlug) return;
+    let active = true;
+    fetch(`/api/steer/voyages/${encodeURIComponent(runSlug)}`)
+      .then(async (response) => {
+        const data = await response.json() as { run?: StoredRun; error?: string };
+        if (!response.ok) throw new Error(data.error || "Could not load run");
+        if (!data.run) throw new Error("Run was not found");
+        return data.run;
+      })
+      .then((run) => {
+        if (!active) return;
+        setStoredRun(run);
+        const researcherOutput = pretty(run.researcherOutput);
+        const directorOutput = pretty(run.directorOutput);
+        const writerOutput = pretty(run.writerOutput);
+        const artistOutput = pretty(run.artistOutput);
+        const parsedWriterOutput = parseStoredValue(run.writerOutput);
+        const writerAssets = parsedWriterOutput && typeof parsedWriterOutput === "object" && !Array.isArray(parsedWriterOutput)
+          ? (parsedWriterOutput as Record<string, unknown>).need_assets
+          : undefined;
+        const progress = Array.isArray(run.progress) ? run.progress : [];
+        setRunAllHistoricalEvent(run.steering?.historicalEvent ?? "");
+        setRunAllSynopsis(run.steering?.synopsisDirection ?? "");
+        setDirectorLimits((current) => ({
+          ...current,
+          ...(run.storyConfig ?? {}),
+        }));
+        setPanels({
+          researcher: { ...emptyPanel(), input: run.steering?.historicalEvent ?? "", output: researcherOutput },
+          director: { ...emptyPanel(), input: researcherOutput, output: directorOutput },
+          writer: { ...emptyPanel(), input: directorOutput, output: writerOutput },
+          artist: { ...emptyPanel(), input: pretty(writerAssets ?? parsedWriterOutput), output: artistOutput },
+        });
+        setDebug(progress);
+        if (run.error) {
+          setDebug((current) => [...current, { agent: "system", phase: "error", message: run.error }]);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setStoredRunError(error instanceof Error ? error.message : "Could not load run");
+      });
+    return () => {
+      active = false;
+    };
+  }, [runSlug]);
 
   const update = (agent: AgentName, patch: Partial<PanelState>) =>
     setPanels((current) => ({ ...current, [agent]: { ...current[agent], ...patch } }));
@@ -178,16 +281,28 @@ export default function SteerClient() {
               name: string;
               assetId?: string;
               imageDataUrls?: string[];
+              frames?: Array<{ frameKey: string; dataUrl: string }>;
+              metadata?: unknown;
             };
-            const generated = (asset.imageDataUrls ?? []).map((url) => ({
-              type: asset.type,
-              name: asset.name,
-              url,
-              assetId: asset.assetId,
-            }));
+            const generated = asset.frames?.length
+              ? asset.frames.map(({ frameKey, dataUrl }) => ({
+                  type: asset.type,
+                  name: asset.name,
+                  frameKey,
+                  url: dataUrl,
+                  assetId: asset.assetId,
+                  metadata: asset.metadata,
+                }))
+              : (asset.imageDataUrls ?? []).map((url) => ({
+                  type: asset.type,
+                  name: asset.name,
+                  url,
+                  assetId: asset.assetId,
+                  metadata: asset.metadata,
+                }));
             runAssets.push(...generated);
             setImages((current) => [...current, ...generated]);
-            const assetEvent = { kind: "asset", type: asset.type, name: asset.name, imageCount: generated.length };
+            const assetEvent = { kind: "asset", type: asset.type, name: asset.name, imageCount: generated.length, metadata: asset.metadata };
             progressLog?.push(assetEvent);
             setDebug((current) => [...current, assetEvent].slice(-100));
           } else if (parsed.event === "result") {
@@ -238,6 +353,7 @@ export default function SteerClient() {
   }
 
   async function runAll() {
+    if (viewingRun) return;
     const researcherInput = runAllHistoricalEvent.trim();
     if (!researcherInput) {
       toast.error("Error: enter a historical event in Run all inputs!");
@@ -323,6 +439,7 @@ export default function SteerClient() {
       const writerPayload = JSON.parse(writerResult.output) as {
         need_assets?: {
           characters?: Array<{ name: string; desc: string }>;
+          starCharacter?: { name: string; desc: string } | null;
         };
       };
       if (!writerPayload.need_assets) {
@@ -333,6 +450,7 @@ export default function SteerClient() {
       const filteredDirector = {
         ...directorOutput,
         characters: writerPayload.need_assets.characters ?? [],
+        starCharacter: writerPayload.need_assets.starCharacter ?? null,
       };
       const artistResult = await run(
         "artist",
@@ -352,6 +470,7 @@ export default function SteerClient() {
       setDebug((current) => [...current, { agent: "system", phase: "save", message: "Saving story to the database…" }].slice(-100));
       const director = filteredDirector as {
         characters: Array<{ name: string; desc: string }>;
+        starCharacter: { name: string; desc: string } | null;
         collectible: { name: string; desc: string };
       };
       const assets = artistResult.assets.filter((asset, index, all) =>
@@ -373,8 +492,8 @@ export default function SteerClient() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: researcherInput,
           storyJson,
+          synopsis: directorOutput.synopsis,
           runSlug,
           steering,
           storyConfig: directorLimits,
@@ -384,8 +503,10 @@ export default function SteerClient() {
             writer: writerOutput,
             artist: artistOutput,
           },
+          // Finalize derives these fields from the agent snapshots so UI steering
+          // cannot overwrite the historical topic or Director synopsis.
           director,
-          assets: assets.map((asset) => ({ type: asset.type, name: asset.name, dataUrl: asset.url, assetId: asset.assetId })),
+          assets: assets.map((asset) => ({ type: asset.type, name: asset.name, frameKey: asset.frameKey, dataUrl: asset.url, assetId: asset.assetId, metadata: asset.metadata })),
           progress: saveProgress,
           usage,
         }),
@@ -441,13 +562,13 @@ export default function SteerClient() {
           <p className="font-mono text-[10px] uppercase tracking-[.25em] text-cyan-200/80">{agent}</p>
           <h2 className="mt-1 font-display text-xl text-white">{title}</h2>
         </div>
-        <button onClick={() => run(agent)} disabled={runAllRunning || panels[agent].running} className="inline-flex items-center gap-2 rounded-lg border border-cyan-100/20 bg-cyan-100/10 px-3 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-100/20 disabled:cursor-wait disabled:grayscale disabled:opacity-30">
+        <button onClick={() => run(agent)} disabled={viewingRun || runAllRunning || panels[agent].running} className="inline-flex items-center gap-2 rounded-lg border border-cyan-100/20 bg-cyan-100/10 px-3 py-2 text-xs font-semibold text-cyan-50 transition hover:bg-cyan-100/20 disabled:cursor-wait disabled:grayscale disabled:opacity-30">
           {panels[agent].running ? <LoaderCircle size={14} className="animate-spin" /> : <Play size={13} fill="currentColor" />}
           {panels[agent].running ? "Running" : "Run"}
         </button>
       </div>
       <label className="mb-2 block font-mono text-[11px] uppercase tracking-[.12em] text-white/55">{label} <span className="normal-case tracking-normal text-white/30">(editable override)</span></label>
-      <TextArea value={panels[agent].input} onChange={(value) => update(agent, { input: value })} placeholder={placeholder} />
+      <TextArea value={panels[agent].input} onChange={(value) => update(agent, { input: value })} placeholder={placeholder} readOnly={viewingRun} />
       {panels[agent].error && <p className="mt-2 whitespace-pre-wrap text-xs text-red-300">{panels[agent].error}</p>}
       {panels[agent].output && (
         <div className="mt-3">
@@ -483,8 +604,10 @@ export default function SteerClient() {
             <h1 className="mt-2 font-display text-4xl tracking-tight text-white md:text-5xl">Agent test console</h1>
             <p className="mt-2 max-w-2xl text-sm text-white/60">Run one stage at a time. Outputs automatically feed the next stage, but every input remains editable.</p>
           </div>
-          <Link href="/steer/voyages" aria-label="Open previous voyages" title="Previous voyages" className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-cyan-200/10 px-4 py-2 font-mono text-[10px] uppercase tracking-[.2em] text-cyan-100 transition hover:bg-cyan-200/20"><Ship size={15} /> <span className="hidden sm:inline">Previous voyages</span></Link>
-        </header>
+            <Link href="/steer/voyages" aria-label="Open previous voyages" title="Previous voyages" className="inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-cyan-200/10 px-4 py-2 font-mono text-[10px] uppercase tracking-[.2em] text-cyan-100 transition hover:bg-cyan-200/20"><Ship size={15} /> <span className="hidden sm:inline">Previous voyages</span></Link>
+          </header>
+        {storedRunLoading && <p className="mx-auto mb-4 w-full max-w-[1700px] rounded-xl border border-cyan-200/15 bg-cyan-100/[.04] px-4 py-3 text-sm text-cyan-100/70">Loading saved run…</p>}
+        {storedRunError && <p className="mx-auto mb-4 w-full max-w-[1700px] rounded-xl border border-rose-200/20 bg-rose-300/10 px-4 py-3 font-mono text-xs text-rose-100">Could not load run: {storedRunError}</p>}
         <div className={`mx-auto grid min-h-0 w-full max-w-[1700px] flex-1 gap-5 ${debugOpen ? "lg:grid-cols-[minmax(0,1fr)_minmax(420px,42vw)]" : "grid-cols-1"}`}>
           <div className="scrollbar-pill min-h-0 space-y-4 overflow-y-auto pr-1">
             <section className="rounded-xl border border-white/15 bg-slate-950/35 p-5 shadow-2xl shadow-slate-950/20 backdrop-blur-md">
@@ -494,18 +617,18 @@ export default function SteerClient() {
               </div>
               <div className="space-y-3">
                 <label className="block font-mono text-[10px] uppercase tracking-[.12em] text-white/50">Historical event</label>
-                <TextArea value={runAllHistoricalEvent} onChange={setRunAllHistoricalEvent} placeholder="American Civil War" />
+                <TextArea value={runAllHistoricalEvent} onChange={setRunAllHistoricalEvent} placeholder="American Civil War" readOnly={viewingRun} />
                 <label className="block font-mono text-[10px] uppercase tracking-[.12em] text-white/50">Synopsis direction <span className="normal-case tracking-normal text-white/30">(optional)</span></label>
-                <TextArea value={runAllSynopsis} onChange={setRunAllSynopsis} placeholder="A reflective journal that connects military strategy to emancipation and Reconstruction." />
+                <TextArea value={runAllSynopsis} onChange={setRunAllSynopsis} placeholder="A reflective journal that connects military strategy to emancipation and Reconstruction." readOnly={viewingRun} />
               </div>
             </section>
             {runAllRunning ? (
-              <button onClick={stopRunAll} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-200/30 bg-red-200/15 px-4 py-3 text-sm font-semibold text-red-50 transition hover:bg-red-200/25">
+              <button onClick={stopRunAll} disabled={viewingRun} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-200/30 bg-red-200/15 px-4 py-3 text-sm font-semibold text-red-50 transition hover:bg-red-200/25">
                 <Square size={14} fill="currentColor" />
                 Stop run
               </button>
             ) : (
-              <button onClick={runAll} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-100/25 bg-cyan-100/15 px-4 py-3 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-100/25">
+              <button onClick={runAll} disabled={viewingRun} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-100/25 bg-cyan-100/15 px-4 py-3 text-sm font-semibold text-cyan-50 transition hover:bg-cyan-100/25 disabled:cursor-not-allowed disabled:opacity-30">
                 <Play size={14} fill="currentColor" />
                 Run all
               </button>
@@ -516,14 +639,14 @@ export default function SteerClient() {
                 <h2 className="mt-1 font-display text-xl text-white">Settings</h2>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <label className="font-mono text-[10px] uppercase tracking-[.12em] text-white/50">Max turns<input type="number" min={1} max={100} value={directorLimits.maxTurns} onChange={(event) => setDirectorLimits((current) => ({ ...current, maxTurns: Number(event.target.value) }))} className="mt-2 w-full rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-xs normal-case tracking-normal text-white outline-none focus:border-cyan-200/50" /></label>
-                <label className="font-mono text-[10px] uppercase tracking-[.12em] text-white/50">Max characters<input type="number" min={1} max={100} value={directorLimits.maxCharacters} onChange={(event) => setDirectorLimits((current) => ({ ...current, maxCharacters: Number(event.target.value) }))} className="mt-2 w-full rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-xs normal-case tracking-normal text-white outline-none focus:border-cyan-200/50" /></label>
-                <label className="font-mono text-[10px] uppercase tracking-[.12em] text-white/50">Max tries<input type="number" min={1} max={10} value={directorLimits.maxTries} onChange={(event) => setDirectorLimits((current) => ({ ...current, maxTries: Number(event.target.value) }))} className="mt-2 w-full rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-xs normal-case tracking-normal text-white outline-none focus:border-cyan-200/50" /></label>
-                <label className="font-mono text-[10px] uppercase tracking-[.12em] text-white/50"><span className="inline-flex items-center gap-1">Max output tokens<span title="Only applies to Claude. The OpenAI client does not send a max output token limit." aria-label="Claude only"><Info size={12} className="text-cyan-200/65" /></span></span><input type="number" min={1} max={128000} value={directorLimits.maxOutputTokens} onChange={(event) => setDirectorLimits((current) => ({ ...current, maxOutputTokens: Number(event.target.value) }))} className="mt-2 w-full rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-xs normal-case tracking-normal text-white outline-none focus:border-cyan-200/50" /></label>
+                <label className="font-mono text-[10px] uppercase tracking-[.12em] text-white/50">Max turns<input type="number" min={1} max={100} value={directorLimits.maxTurns} readOnly={viewingRun} onChange={(event) => setDirectorLimits((current) => ({ ...current, maxTurns: Number(event.target.value) }))} className="mt-2 w-full rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-xs normal-case tracking-normal text-white outline-none focus:border-cyan-200/50" /></label>
+                <label className="font-mono text-[10px] uppercase tracking-[.12em] text-white/50">Max characters<input type="number" min={1} max={100} value={directorLimits.maxCharacters} readOnly={viewingRun} onChange={(event) => setDirectorLimits((current) => ({ ...current, maxCharacters: Number(event.target.value) }))} className="mt-2 w-full rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-xs normal-case tracking-normal text-white outline-none focus:border-cyan-200/50" /></label>
+                <label className="font-mono text-[10px] uppercase tracking-[.12em] text-white/50">Max tries<input type="number" min={1} max={10} value={directorLimits.maxTries} readOnly={viewingRun} onChange={(event) => setDirectorLimits((current) => ({ ...current, maxTries: Number(event.target.value) }))} className="mt-2 w-full rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-xs normal-case tracking-normal text-white outline-none focus:border-cyan-200/50" /></label>
+                <label className="font-mono text-[10px] uppercase tracking-[.12em] text-white/50"><span className="inline-flex items-center gap-1">Max output tokens<span title="Only applies to Claude. The OpenAI client does not send a max output token limit." aria-label="Claude only"><Info size={12} className="text-cyan-200/65" /></span></span><input type="number" min={1} max={128000} value={directorLimits.maxOutputTokens} readOnly={viewingRun} onChange={(event) => setDirectorLimits((current) => ({ ...current, maxOutputTokens: Number(event.target.value) }))} className="mt-2 w-full rounded-lg border border-white/15 bg-slate-950/60 px-3 py-2 text-xs normal-case tracking-normal text-white outline-none focus:border-cyan-200/50" /></label>
               </div>
             </section>
             {panel("researcher", "Research facts", "Historical event", "American Civil War")}
-            {panel("director", "Plan the adventure", "Researcher JSON", '{"articleUrl": "https://en.wikipedia.org/wiki/..."}')}
+            {panel("director", "Plan the adventure", "Researcher JSON", '{"topic": "...", "articleUrl": "https://en.wikipedia.org/wiki/..."}')}
             {panel("writer", "Write dialogue", "Director JSON", '{"synopsis": {}, "characters": [], "endings": [], "collectible": {}, "scenes": []}')}
             {panel("artist", "Artist", "Asset needs JSON", '{"characters": [{"name": "...", "desc": "..."}], "collectible": {"name": "...", "desc": "..."}}')}
           </div>
@@ -535,7 +658,7 @@ export default function SteerClient() {
                 const asset = entry as { kind?: string; type?: ArtistType; name?: string; imageCount?: number };
                 if (asset.kind === "asset") {
                   const assetImages = images.filter((image) => image.type === asset.type && image.name === asset.name);
-                  return <div key={`asset-${asset.name ?? index}-${index}`} className="rounded-lg border border-cyan-200/15 bg-cyan-100/[.04] p-3"><p className="mb-2 text-xs text-cyan-100"><span className="mr-2 font-mono text-[9px] uppercase tracking-[.14em] text-cyan-200/50">{asset.type}</span>{asset.name}</p><div className="grid grid-cols-2 gap-2">{assetImages.map((image, imageIndex) => <Image key={`${image.url.slice(0, 16)}-${imageIndex}`} src={image.url} alt={asset.name ?? "Generated pixel art"} width={128} height={128} unoptimized className="w-full rounded-lg border border-white/10 bg-white/10" />)}</div></div>;
+                  return <div key={`asset-${asset.name ?? index}-${index}`} className="rounded-lg border border-cyan-200/15 bg-cyan-100/[.04] p-3"><p className="mb-2 text-xs text-cyan-100"><span className="mr-2 font-mono text-[9px] uppercase tracking-[.14em] text-cyan-200/50">{asset.type}</span>{asset.name}</p>{asset.type === "character_sprite" ? <AnimatedSpritePreview frames={assetImages} name={asset.name ?? "Generated character"} /> : <div className="grid grid-cols-2 gap-2">{assetImages.map((image, imageIndex) => <Image key={`${image.url.slice(0, 16)}-${imageIndex}`} src={image.url} alt={asset.name ?? "Generated pixel art"} width={128} height={128} unoptimized className="w-full rounded-lg border border-white/10 bg-white/10" />)}</div>}</div>;
                 }
                 const progress = entry as { agent?: string; message?: string; phase?: string };
                 return <div key={`${progress.agent ?? "event"}-${index}`} className="whitespace-pre-wrap rounded-lg border border-white/8 bg-white/[.03] px-3 py-2 text-xs leading-4 text-cyan-50/75"><span className="mr-2 font-mono text-[9px] uppercase tracking-[.14em] text-cyan-200/50">{progress.agent ?? "system"}</span>{progress.message ?? "Progress update"}</div>;

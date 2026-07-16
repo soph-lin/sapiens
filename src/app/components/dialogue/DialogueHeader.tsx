@@ -90,7 +90,7 @@ function Meter({
 type DialogueHeaderProps = {
   title: string;
   subtitle?: string;
-  state: State;
+  state?: State;
   theme: DialogueTheme;
   /** Dynamic numeric stats; only when the story contains tracked stats. */
   showStats?: boolean;
@@ -113,7 +113,7 @@ export function DialogueHeader({
         </div>
       </header>
 
-      {showStats ? (
+      {showStats && state ? (
         <div className="mx-auto w-full max-w-2xl px-6 sm:px-8">
           <div className={theme.metersRule}>
             {Object.entries(state.stats).map(([key, value]) => (

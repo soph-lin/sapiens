@@ -8,18 +8,21 @@ import { AGENT_CONFIG, ORCHESTRATOR_CONFIG } from "@/lib/orchestrator/config";
 export const runtime = "nodejs";
 
 type AssetInput = {
-  type: "character" | "collectible";
+  type: "character" | "character_sprite" | "collectible";
   name: string;
-  dataUrl: string;
+  frameKey?: string;
+  dataUrl?: string;
   assetId?: string;
+  metadata?: unknown;
 };
 
 type FinalizeBody = {
   runSlug?: string;
-  topic?: string;
   storyJson?: unknown;
+  synopsis?: unknown;
   director?: {
     characters?: Array<{ name?: string; desc?: string }>;
+    starCharacter?: { name?: string; desc?: string } | null;
     collectible?: { name?: string; desc?: string };
   };
   assets?: AssetInput[];
@@ -34,6 +37,21 @@ type FinalizeBody = {
     artist?: unknown;
   };
 };
+
+function outputObject(value: unknown, label: string): Record<string, unknown> {
+  let candidate = value;
+  if (typeof candidate === "string") {
+    try {
+      candidate = JSON.parse(candidate) as unknown;
+    } catch {
+      throw new Error(`${label} must be a JSON object`);
+    }
+  }
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new Error(`${label} must be a JSON object`);
+  }
+  return candidate as Record<string, unknown>;
+}
 
 function requiredString(value: unknown, label: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} is required`);
@@ -50,19 +68,52 @@ function decodeDataUrl(dataUrl: string): { mimeType: string; data: Uint8Array<Ar
   return { mimeType: match[1], data: bytes };
 }
 
-function assetFor(assets: AssetInput[], type: AssetInput["type"], name: string): AssetInput {
-  const asset = assets.find((candidate) => candidate.type === type && candidate.name === name);
+function findAsset(
+  assets: AssetInput[],
+  type: AssetInput["type"],
+  name: string,
+  frameKey?: string,
+) {
+  return assets.find((candidate) =>
+    candidate.type === type &&
+    candidate.name === name &&
+    (frameKey === undefined ? candidate.frameKey === undefined : candidate.frameKey === frameKey),
+  );
+}
+
+function assetFor(
+  assets: AssetInput[],
+  type: AssetInput["type"],
+  name: string,
+  frameKey?: string,
+): AssetInput {
+  const asset = findAsset(assets, type, name, frameKey);
   if (!asset) throw new Error(`Missing ${type} asset for ${name}`);
   return asset;
+}
+
+function assetType(type: AssetInput["type"]): "CHARACTER" | "CHARACTER_SPRITE" | "COLLECTIBLE" {
+  if (type === "character_sprite") return "CHARACTER_SPRITE";
+  if (type === "collectible") return "COLLECTIBLE";
+  return "CHARACTER";
 }
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as FinalizeBody;
-    const topic = requiredString(body.topic, "topic");
+    const researcherOutput = outputObject(body.outputs?.researcher, "outputs.researcher");
+    const topic = requiredString(researcherOutput.topic, "outputs.researcher.topic");
+    const synopsis = body.synopsis;
+    if (!synopsis || typeof synopsis !== "object" || Array.isArray(synopsis)) {
+      throw new Error("synopsis must be a JSON object");
+    }
+    for (const field of ["premise", "eventSpine", "playerGoal", "learningFocus"]) {
+      requiredString((synopsis as Record<string, unknown>)[field], `synopsis.${field}`);
+    }
     if (body.storyJson === undefined || body.storyJson === null) throw new Error("storyJson is required");
     const storyJson = validateStoryPayload(body.storyJson);
     const characters = body.director?.characters ?? [];
+    const starCharacter = body.director?.starCharacter ?? null;
     const collectible = body.director?.collectible;
     const collectibleName = requiredString(collectible?.name, "director.collectible.name");
     const collectibleDescription = requiredString(collectible?.desc, "director.collectible.desc");
@@ -71,6 +122,12 @@ export async function POST(request: Request) {
       name: requiredString(character.name, "character.name"),
       description: requiredString(character.desc, "character.desc"),
     }));
+    if (starCharacter) {
+      const starName = requiredString(starCharacter.name, "director.starCharacter.name");
+      if (!characterInputs.some((character) => character.name.toLocaleLowerCase() === starName.toLocaleLowerCase())) {
+        throw new Error("director.starCharacter must match a director character");
+      }
+    }
 
     const progress = Array.isArray(body.progress) ? body.progress : [];
     const steering = body.steering && typeof body.steering === "object"
@@ -93,11 +150,36 @@ export async function POST(request: Request) {
     const story = await prisma.$transaction(async (tx) => {
       const characterRecords = characterInputs.map((character) => {
         const input = assetFor(assets, "character", character.name);
-        const decoded = input.assetId ? null : decodeDataUrl(input.dataUrl);
-        return { character, input, decoded };
+        const decoded = input.assetId
+          ? null
+          : decodeDataUrl(requiredString(input.dataUrl, `character asset dataUrl for ${character.name}`));
+        const isStar = starCharacter?.name?.toLocaleLowerCase() === character.name.toLocaleLowerCase();
+        const spriteInputs = isStar
+          ? assets.filter((candidate) => candidate.type === "character_sprite" && candidate.name === character.name)
+          : [];
+        const spriteInput = isStar
+          ? spriteInputs.find((candidate) => candidate.frameKey === "south") ??
+            spriteInputs.find((candidate) => candidate.frameKey === undefined)
+          : undefined;
+        if (isStar && !spriteInput) {
+          throw new Error(`Missing character_sprite asset for ${character.name}`);
+        }
+        const spriteDecoded = spriteInput?.assetId
+          ? null
+          : spriteInput?.dataUrl
+            ? decodeDataUrl(spriteInput.dataUrl)
+            : null;
+        const spriteFrames = spriteInputs
+          .filter((candidate) => candidate.frameKey)
+          .map((candidate) => ({
+            frameKey: candidate.frameKey!,
+            decoded: decodeDataUrl(requiredString(candidate.dataUrl, `sprite frame dataUrl for ${character.name}`)),
+            metadata: candidate.metadata,
+          }));
+        return { character, input, decoded, spriteInput, spriteDecoded, spriteFrames };
       });
       const collectibleInput = assetFor(assets, "collectible", collectibleName);
-      const collectibleDecoded = decodeDataUrl(collectibleInput.dataUrl);
+      const collectibleDecoded = decodeDataUrl(requiredString(collectibleInput.dataUrl, "collectible asset dataUrl"));
       const slug = randomUUID().replaceAll("-", "");
 
       if (body.runSlug) {
@@ -123,22 +205,48 @@ export async function POST(request: Request) {
         data: {
           slug,
           topic,
+          synopsis: synopsis as Prisma.InputJsonValue,
           storyJson: storyJson as Prisma.InputJsonValue,
           characters: {
-            create: characterRecords.map(({ character, input, decoded }) => ({
+            create: characterRecords.map(({ character, input, decoded, spriteInput, spriteDecoded, spriteFrames }) => ({
               name: character.name,
               description: character.description,
               known: Boolean(input.assetId),
               asset: input.assetId
                 ? { connect: { id: input.assetId } }
-                : { create: { type: "CHARACTER", name: character.name, mimeType: decoded!.mimeType, data: decoded!.data } },
+                : { create: { type: assetType(input.type), name: character.name, mimeType: decoded!.mimeType, data: decoded!.data, metadata: input.metadata as Prisma.InputJsonValue | undefined } },
+              ...(spriteInput
+                ? {
+                    spriteAsset: spriteInput.assetId
+                      ? { connect: { id: spriteInput.assetId } }
+                      : {
+                          create: {
+                            type: assetType(spriteInput.type),
+                            name: character.name,
+                            mimeType: spriteDecoded!.mimeType,
+                            data: spriteDecoded!.data,
+                            metadata: spriteInput.metadata as Prisma.InputJsonValue | undefined,
+                            frames: spriteFrames.length
+                              ? {
+                                  create: spriteFrames.map((frame) => ({
+                                    frameKey: frame.frameKey,
+                                    mimeType: frame.decoded.mimeType,
+                                    data: frame.decoded.data,
+                                    metadata: frame.metadata as Prisma.InputJsonValue | undefined,
+                                  })),
+                                }
+                              : undefined,
+                          },
+                        },
+                  }
+                : {}),
             })),
           },
           collectible: {
             create: {
               name: collectibleName,
               description: collectibleDescription,
-              asset: { create: { type: "COLLECTIBLE", name: collectibleName, mimeType: collectibleDecoded.mimeType, data: collectibleDecoded.data } },
+              asset: { create: { type: assetType(collectibleInput.type), name: collectibleName, mimeType: collectibleDecoded.mimeType, data: collectibleDecoded.data, metadata: collectibleInput.metadata as Prisma.InputJsonValue | undefined } },
             },
           },
             genRun: body.runSlug

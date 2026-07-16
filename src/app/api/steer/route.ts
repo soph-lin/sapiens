@@ -62,8 +62,25 @@ function artistPlanInput(value: unknown): ArtistPlan {
   if (typeof collectible.name !== "string" || typeof collectible.desc !== "string") {
     throw new Error("director input.collectible requires name and desc");
   }
+  const starCharacter = object.starCharacter;
+  if (starCharacter !== undefined && starCharacter !== null) {
+    if (typeof starCharacter !== "object" || Array.isArray(starCharacter)) {
+      throw new Error("artist input.starCharacter must be an object or null");
+    }
+    const star = starCharacter as Record<string, unknown>;
+    if (typeof star.name !== "string" || typeof star.desc !== "string") {
+      throw new Error("artist input.starCharacter requires name and desc");
+    }
+  }
   return {
     characters,
+    starCharacter:
+      starCharacter && typeof starCharacter === "object"
+        ? {
+            name: (starCharacter as Record<string, unknown>).name as string,
+            desc: (starCharacter as Record<string, unknown>).desc as string,
+          }
+        : null,
     collectible: { name: collectible.name, desc: collectible.desc },
   };
 }
@@ -134,7 +151,7 @@ function validateBody(body: SteerBody) {
   if (body.agent === "researcher") {
     if (typeof body.input !== "string") throw new Error("historical event is required");
   } else if (body.agent === "director") {
-    objectWithKeys(body.input, "researcher input", ["articleUrl"]);
+    objectWithKeys(body.input, "researcher input", ["topic", "articleUrl"]);
   } else if (body.agent === "writer") {
     objectWithKeys(body.input, "director input", [
       "synopsis",
@@ -192,11 +209,21 @@ export async function POST(request: Request) {
           characterAssetStore: {
             findByNames: async (names: string[]) => {
               const characters = await prisma.character.findMany({
-                where: { name: { in: names }, known: true },
+                where: { name: { in: names } },
                 include: { asset: true },
                 orderBy: { id: "asc" },
               });
               return characters.map(({ asset }) => asset);
+            },
+            findSpriteByNames: async (names: string[]) => {
+              const characters = await prisma.character.findMany({
+                where: { name: { in: names }, spriteAssetId: { not: null } },
+                include: { spriteAsset: true },
+                orderBy: { id: "asc" },
+              });
+              return characters.flatMap(({ spriteAsset }) =>
+                spriteAsset ? [spriteAsset] : [],
+              );
             },
           },
         };
@@ -206,7 +233,7 @@ export async function POST(request: Request) {
           output = await researcher(body.input as string, options);
         } else if (body.agent === "director") {
           output = await director(
-            objectWithKeys(body.input, "researcher input", ["articleUrl"]),
+            objectWithKeys(body.input, "researcher input", ["topic", "articleUrl"]),
             options,
           );
         } else if (body.agent === "writer") {

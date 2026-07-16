@@ -8,6 +8,7 @@ import {
 import { loadAgentPrompt, wikipediaTools } from "./agents";
 
 export type ResearchBrief = {
+  topic: string;
   articleUrl: string;
 };
 
@@ -75,8 +76,11 @@ export async function researcher(
         name: "research_article",
         schema: {
           type: "object",
-          properties: { articleUrl: { type: "string" } },
-          required: ["articleUrl"],
+          properties: {
+            topic: { type: "string", minLength: 1 },
+            articleUrl: { type: "string", minLength: 1 },
+          },
+          required: ["topic", "articleUrl"],
           additionalProperties: false,
         },
       },

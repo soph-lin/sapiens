@@ -1,148 +1,105 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
-import { Toaster } from "react-hot-toast";
-import { AtmosphereArt } from "./AtmosphereArt";
-import { DialogueBox } from "./DialogueBox";
+import type { ReactNode } from "react";
+import type { Presentable, State } from "@/lib/dialogue";
+import { DialogueBox, type DialogueBoxSize } from "./DialogueBox";
 import { DialogueHeader } from "./DialogueHeader";
+import { AtmosphereArt } from "./AtmosphereArt";
 import { THEMES, type DialogueThemeId } from "./theme";
-import { useDialogueSession } from "./useDialogueSession";
+import type { TypingGateRef } from "./typewriter";
 
-type DialoguePanelProps = {
-  scenarioId: string;
-  story: unknown;
+export type DialoguePanelProps = {
+  view: Presentable;
+  typingGateRef: TypingGateRef;
+  onAdvance: () => void;
+  onChoose: (index: number) => void;
+  onRestart: () => void;
+  theme?: DialogueThemeId;
   title?: string;
   subtitle?: string;
-  theme?: DialogueThemeId;
+  state?: State;
+  showStats?: boolean;
   /** Optional decorative braille / monospace scene above the dialogue. */
   atmosphereArt?: string;
-  characters?: Array<{ name: string; assetUrl?: string }>;
-  collectible?: { name: string; assetUrl?: string };
+  characterPortrait?: { name: string; assetUrl?: string };
+  revealKey?: number;
+  size?: DialogueBoxSize;
+  showHint?: boolean;
+  onTypingChange?: (done: boolean) => void;
+  children?: ReactNode;
+  className?: string;
 };
 
-function findSpeakerAsset(
-  speaker: string | undefined,
-  characters: Array<{ name: string; assetUrl?: string }>,
-) {
-  if (!speaker) return undefined;
-  const normalizedSpeaker = speaker.trim().toLowerCase();
-  return characters.find(
-    (character) => character.name.trim().toLowerCase() === normalizedSpeaker,
-  );
-}
-
+/**
+ * The shared dialogue presentation surface. It knows how to display a
+ * presentable view, but not where that view came from or how it is produced.
+ */
 export function DialoguePanel({
-  scenarioId,
-  story,
-  title = "Field note",
-  subtitle,
+  view,
+  typingGateRef,
+  onAdvance,
+  onChoose,
+  onRestart,
   theme: themeId = "vanilla",
+  title,
+  subtitle,
+  state,
+  showStats = false,
   atmosphereArt,
-  characters = [],
-  collectible,
+  characterPortrait,
+  revealKey,
+  size,
+  showHint,
+  onTypingChange,
+  children,
+  className = "",
 }: DialoguePanelProps) {
   const theme = THEMES[themeId];
-  const [collectibleDismissed, setCollectibleDismissed] = useState(false);
-  const {
-    view,
-    state,
-    hasStats,
-    revealKey,
-    typingGateRef,
-    advance,
-    choose,
-    restart: restartSession,
-  } = useDialogueSession({ scenarioId, story });
-  const speakerAsset = view.kind === "text"
-    ? findSpeakerAsset(view.speaker, characters)
-    : undefined;
-
-  const showCollectible = view.kind === "end" && Boolean(collectible) && !collectibleDismissed;
-
-  const restart = () => {
-    setCollectibleDismissed(false);
-    restartSession();
-  };
 
   return (
-    <div className={theme.root}>
-      <Toaster
-        position="top-right"
-        gutter={10}
-        toastOptions={{
-          duration: 2800,
-          className: theme.toastClass,
-          style: theme.toastStyle,
-        }}
-      />
+    <section className={`text-white ${className}`}>
+      {title ? (
+        <DialogueHeader
+          title={title}
+          subtitle={subtitle}
+          state={state}
+          showStats={showStats}
+          theme={theme}
+        />
+      ) : null}
 
-      <DialogueHeader
-        title={title}
-        subtitle={subtitle}
-        state={state}
-        showStats={hasStats}
-        theme={theme}
-      />
+      {atmosphereArt ? <AtmosphereArt art={atmosphereArt} theme={theme} /> : null}
 
-      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-6 py-10 sm:px-8 sm:py-14">
-        {atmosphereArt ? (
-          <AtmosphereArt art={atmosphereArt} theme={theme} />
-        ) : null}
-
-        {speakerAsset?.assetUrl ? (
-          <div className="flex justify-end pb-4">
-            <Image
-              src={speakerAsset.assetUrl}
-              alt={`${speakerAsset.name} portrait`}
-              width={256}
-              height={256}
-              unoptimized
-              className="block h-64 w-64 object-contain"
-              style={{ imageRendering: "pixelated" }}
-            />
-          </div>
-        ) : null}
-
-        <div key={revealKey} className="flex flex-1 flex-col">
-          <DialogueBox
-            view={view}
-            theme={theme}
-            typingGateRef={typingGateRef}
-            onAdvance={advance}
-            onChoose={choose}
-            onRestart={restart}
+      {characterPortrait?.assetUrl ? (
+        <div className="flex justify-start pb-4">
+          <Image
+            src={characterPortrait.assetUrl}
+            alt={`${characterPortrait.name} portrait`}
+            width={256}
+            height={256}
+            unoptimized
+            className="block h-64 w-64 object-contain"
+            style={{ imageRendering: "pixelated" }}
           />
         </div>
-      </main>
-
-      {showCollectible && collectible ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-6 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-amber-300/40 bg-[#fffaf0] p-6 text-center text-neutral-950 shadow-2xl">
-            <p className="font-space text-[10px] uppercase tracking-[0.28em] text-amber-700">
-              Collectible obtained!
-            </p>
-            {collectible.assetUrl ? (
-              <Image
-                src={collectible.assetUrl}
-                alt={collectible.name}
-                width={128}
-                height={128}
-                unoptimized
-                className="mx-auto mt-5 h-32 w-32 rounded-xl border border-amber-200 bg-white object-contain p-3"
-              />
-            ) : null}
-            <h2 className="mt-5 font-display text-3xl">{collectible.name}</h2>
-            <button
-              type="button"
-              onClick={() => setCollectibleDismissed(true)}
-              className="mt-6 rounded-full bg-neutral-950 px-5 py-3 font-space text-[10px] uppercase tracking-[0.18em] text-white"
-            >
-              Continue
-            </button>
-          </div>
-        </div>
       ) : null}
-    </div>
+
+      <div key={revealKey} className="flex min-h-0 flex-col">
+        <DialogueBox
+          view={view}
+          theme={theme}
+          typingGateRef={typingGateRef}
+          onAdvance={onAdvance}
+          onChoose={onChoose}
+          onRestart={onRestart}
+          size={size}
+          showHint={showHint}
+          onTypingChange={onTypingChange}
+        />
+      </div>
+
+      {children}
+    </section>
   );
 }
