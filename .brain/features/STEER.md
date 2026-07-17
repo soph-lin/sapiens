@@ -174,9 +174,8 @@ Wikipedia article selected for the Director.
 ```
 
 `starCharacter` is the real named person the Director judges most important to the event;
-it is not an invented protagonist or a replacement for the broader cast. A non-null value
-must include a dedicated, fetched English Wikipedia page in `wikipediaUrl`; the Director
-returns `null` when no real person with a verified page is suitable. `Story.topic` is saved from
+it is not an invented protagonist or a replacement for the broader cast. The Director
+returns `null` when no real person is suitable. `Story.topic` is saved from
 `researcher.topic`, and `Story.synopsis` is saved from `director.synopsis`. Legacy stories
 without a stored Director snapshot may have a null synopsis until they are regenerated.
 
