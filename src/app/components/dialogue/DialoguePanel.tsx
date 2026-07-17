@@ -1,13 +1,84 @@
 "use client";
 
 import Image from "next/image";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import type { Presentable, State } from "@/lib/dialogue";
-import { DialogueBox, type DialogueBoxSize } from "./DialogueBox";
+import {
+  DialogueBox,
+  dialogueContinueHint,
+  type DialogueBoxSize,
+  type DialogueDropdownChoice,
+  type DialogueEditableChoice,
+} from "./DialogueBox";
 import { DialogueHeader } from "./DialogueHeader";
 import { AtmosphereArt } from "./AtmosphereArt";
-import { THEMES, type DialogueThemeId } from "./theme";
+import { THEMES, type DialogueTheme, type DialogueThemeId } from "./theme";
 import type { TypingGateRef } from "./typewriter";
+
+function DialogueBoxWithHint({
+  view,
+  theme,
+  typingGateRef,
+  onAdvance,
+  onChoose,
+  onRestart,
+  size,
+  showHint,
+  onTypingChange,
+  editableChoice,
+  dropdownChoice,
+}: {
+  view: Presentable;
+  theme: DialogueTheme;
+  typingGateRef: TypingGateRef;
+  onAdvance: () => void;
+  onChoose: (index: number) => void;
+  onRestart: () => void;
+  size?: DialogueBoxSize;
+  showHint?: boolean;
+  onTypingChange?: (done: boolean) => void;
+  editableChoice?: DialogueEditableChoice;
+  dropdownChoice?: DialogueDropdownChoice;
+}) {
+  const [typingDone, setTypingDone] = useState(false);
+  const handleTypingChange = useCallback(
+    (done: boolean) => {
+      setTypingDone(done);
+      onTypingChange?.(done);
+    },
+    [onTypingChange],
+  );
+  const continueHint =
+    showHint === false ? null : dialogueContinueHint(view, typingDone);
+
+  return (
+    <>
+      <DialogueBox
+        view={view}
+        theme={theme}
+        typingGateRef={typingGateRef}
+        onAdvance={onAdvance}
+        onChoose={onChoose}
+        onRestart={onRestart}
+        size={size}
+        onTypingChange={handleTypingChange}
+        editableChoice={editableChoice}
+        dropdownChoice={dropdownChoice}
+      />
+      {continueHint ? (
+        <p className={`${theme.hint} mt-3`}>{continueHint}</p>
+      ) : null}
+    </>
+  );
+}
+
+function isEditingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)
+  );
+}
 
 export type DialoguePanelProps = {
   view: Presentable;
@@ -15,6 +86,10 @@ export type DialoguePanelProps = {
   onAdvance: () => void;
   onChoose: (index: number) => void;
   onRestart: () => void;
+  /** Optional keyboard escape action for an enclosing dialogue layer. */
+  onEscape?: () => void;
+  /** Optional keyboard back action. Renders a `Back — q` helper, without a button. */
+  onBack?: () => void;
   theme?: DialogueThemeId;
   title?: string;
   subtitle?: string;
@@ -28,6 +103,8 @@ export type DialoguePanelProps = {
   showHint?: boolean;
   onTypingChange?: (done: boolean) => void;
   children?: ReactNode;
+  editableChoice?: DialogueEditableChoice;
+  dropdownChoice?: DialogueDropdownChoice;
   className?: string;
 };
 
@@ -41,6 +118,8 @@ export function DialoguePanel({
   onAdvance,
   onChoose,
   onRestart,
+  onEscape,
+  onBack,
   theme: themeId = "vanilla",
   title,
   subtitle,
@@ -53,9 +132,67 @@ export function DialoguePanel({
   showHint,
   onTypingChange,
   children,
+  editableChoice,
+  dropdownChoice,
   className = "",
 }: DialoguePanelProps) {
   const theme = THEMES[themeId];
+  const hintKey =
+    view.kind === "text"
+      ? `${revealKey ?? 0}:${view.id}`
+      : `${revealKey ?? 0}:${view.kind}`;
+
+  // Shared Space/Enter continue: map/home dialogue never mounts
+  // useDialogueSession, so this must live on the panel itself. Capture-phase
+  // preventDefault also stops the browser from scrolling the page when focus
+  // is on the document body rather than the text beat button.
+  const handleContinueIntent = useEffectEvent(() => {
+    if (!typingGateRef.current.done) {
+      typingGateRef.current.skip();
+      return;
+    }
+    onAdvance();
+  });
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && onEscape) {
+        // Free-text / select fields handle Escape locally (blur first).
+        if (isEditingTarget(event.target)) return;
+        event.preventDefault();
+        onEscape();
+        return;
+      }
+
+      if (isEditingTarget(event.target)) return;
+
+      if (
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === "q" &&
+        onBack
+      ) {
+        event.preventDefault();
+        onBack();
+        return;
+      }
+
+      if (event.key !== " " && event.key !== "Enter") return;
+      // Let choice options keep native Space/Enter activation.
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest('[role="option"]')
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      handleContinueIntent();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [onBack, onEscape]);
 
   return (
     <section className={`text-white ${className}`}>
@@ -67,6 +204,10 @@ export function DialoguePanel({
           showStats={showStats}
           theme={theme}
         />
+      ) : null}
+
+      {showStats && state ? (
+        <div aria-hidden="true" className="h-10 shrink-0 sm:h-12" />
       ) : null}
 
       {atmosphereArt ? <AtmosphereArt art={atmosphereArt} theme={theme} /> : null}
@@ -86,7 +227,8 @@ export function DialoguePanel({
       ) : null}
 
       <div key={revealKey} className="flex min-h-0 flex-col">
-        <DialogueBox
+        <DialogueBoxWithHint
+          key={hintKey}
           view={view}
           theme={theme}
           typingGateRef={typingGateRef}
@@ -96,8 +238,12 @@ export function DialoguePanel({
           size={size}
           showHint={showHint}
           onTypingChange={onTypingChange}
+          editableChoice={editableChoice}
+          dropdownChoice={dropdownChoice}
         />
       </div>
+
+      {onBack ? <p className={`${theme.hint} mt-3`}>Back — q</p> : null}
 
       {children}
     </section>

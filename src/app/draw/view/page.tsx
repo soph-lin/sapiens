@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MapRenderer } from "@/app/components/game";
 import {
   createEmptyMapDocument,
@@ -8,22 +8,28 @@ import {
   type MapDocument,
 } from "@/lib/game/map";
 import {
+  computeCameraPosition,
   findPlayerStart,
   movePlayer,
   type PlayerDirection,
   type PlayerPosition,
 } from "@/lib/game/movement";
-import { VIEW_HEIGHT, VIEW_WIDTH } from "@/lib/game/config";
+import type { ViewTiles } from "@/app/components/game/MapRenderer";
 
 const STORAGE_KEY = "sapiens.draw.map.v1";
+const DEFAULT_VIEW_TILES: ViewTiles = { width: 1, height: 1 };
 export default function GamePage() {
   const [document, setDocument] = useState<MapDocument>(() =>
     createEmptyMapDocument(),
   );
   const [player, setPlayer] = useState<PlayerPosition | null>(null);
   const [direction, setDirection] = useState<PlayerDirection>("down");
+  const [viewTiles, setViewTiles] = useState<ViewTiles>(DEFAULT_VIEW_TILES);
   const [errorToast, setErrorToast] = useState<string | null>(null);
   const documentRef = useRef(document);
+  const handleViewTilesChange = useCallback((tiles: ViewTiles) => {
+    setViewTiles(tiles);
+  }, []);
 
   useEffect(() => {
     const loadDraft = window.setTimeout(() => {
@@ -44,18 +50,9 @@ export default function GamePage() {
     return () => window.clearTimeout(loadDraft);
   }, []);
 
-  const cameraX = player
-    ? Math.min(
-        Math.max(0, player.x - Math.floor(VIEW_WIDTH / 2)),
-        Math.max(0, document.width - VIEW_WIDTH),
-      )
-    : 0;
-  const cameraY = player
-    ? Math.min(
-        Math.max(0, player.y - Math.floor(VIEW_HEIGHT / 2)),
-        Math.max(0, document.height - VIEW_HEIGHT),
-      )
-    : 0;
+  const camera = player
+    ? computeCameraPosition(document, player, viewTiles.width, viewTiles.height)
+    : { x: 0, y: 0 };
 
   useEffect(() => {
     const directions: Record<string, PlayerDirection> = {
@@ -77,7 +74,9 @@ export default function GamePage() {
       if (!direction) return;
       event.preventDefault();
       setDirection(direction);
-      setPlayer((current) => current ? movePlayer(documentRef.current, current, direction) : current);
+      setPlayer((current) =>
+        current ? movePlayer(documentRef.current, current, direction) : current,
+      );
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -94,18 +93,21 @@ export default function GamePage() {
             <h1 className="mt-2 text-3xl font-semibold">Map view</h1>
           </div>
           <p className="font-mono text-xs uppercase tracking-[0.15em] text-[#9ea8aa]">
-            Arrow keys or WASD to move
+            Arrow keys or WASD to move · F fullscreen
           </p>
         </div>
 
-        <div className="mx-auto w-fit max-w-full overflow-hidden rounded-3xl border border-white/10 bg-[#070809] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.3)]">
-          <MapRenderer
-            cameraX={cameraX}
-            cameraY={cameraY}
-            document={document}
-            player={player}
-            playerDirection={direction}
-          />
+        <div className="mx-auto w-full max-w-full overflow-hidden rounded-3xl border border-white/10 bg-[#070809] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.3)]">
+          <div className="flex h-[min(70dvh,900px)] min-h-[320px] w-full">
+            <MapRenderer
+              cameraX={camera.x}
+              cameraY={camera.y}
+              document={document}
+              onViewTilesChange={handleViewTilesChange}
+              player={player}
+              playerDirection={direction}
+            />
+          </div>
         </div>
       </div>
       {errorToast ? (

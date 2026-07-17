@@ -4,6 +4,7 @@ import { History as HistoryIcon, NotebookPen, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Coco } from "@/app/components/coco";
 import { DialoguePanel } from "@/app/components/dialogue/DialoguePanel";
+import { useUser } from "@/app/components/user/UserProvider";
 import type { DialogueHistoryEntry, Presentable } from "@/lib/dialogue";
 import NotesEditor from "./NotesEditor";
 
@@ -57,14 +58,6 @@ export function FieldCompanion({
   const [activePane, setActivePane] = useState<PaneId | null>(null);
   const [notesDraft, setNotesDraft] = useState(DEFAULT_NOTE);
   const [savedNotes, setSavedNotes] = useState(DEFAULT_NOTE);
-
-  useEffect(() => {
-    if (activePane !== "coco") return;
-    document.body.dataset.cocoLayerOpen = "true";
-    return () => {
-      delete document.body.dataset.cocoLayerOpen;
-    };
-  }, [activePane]);
 
   useEffect(() => {
     if (!activePane) return;
@@ -262,11 +255,15 @@ function NotesPane({
   onClose: () => void;
 }) {
   const hasChanges = draft !== saved;
+  const { user } = useUser();
+  const ownerLabel = user
+    ? `${formatPossessive(user.displayName)} Field Notes`
+    : "Your Field Notes";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PaneHeader
-        eyebrow="Field notes"
+        eyebrow={ownerLabel}
         title={topic}
         onClose={onClose}
         action={
@@ -295,6 +292,14 @@ function NotesPane({
       </div>
     </div>
   );
+}
+
+function formatPossessive(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return "Your";
+  return trimmed.endsWith("s") || trimmed.endsWith("S")
+    ? `${trimmed}'`
+    : `${trimmed}'s`;
 }
 
 function CocoStage({

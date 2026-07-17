@@ -105,16 +105,16 @@ export function DialogueHeader({
 }: DialogueHeaderProps) {
   return (
     <>
-      <header className="mx-auto flex w-full max-w-2xl items-end justify-between gap-6 px-6 pt-10 pb-6 sm:px-8 sm:pt-14">
+      <header className="flex w-full items-end justify-between gap-6 pb-6">
         <div>
-          <p className={theme.eyebrow}>sapiens / go</p>
+          <p className={theme.eyebrow}>sapiens / sail</p>
           <h1 className={theme.title}>{title}</h1>
           {subtitle ? <p className={theme.subtitle}>{subtitle}</p> : null}
         </div>
       </header>
 
       {showStats && state ? (
-        <div className="mx-auto w-full max-w-2xl px-6 sm:px-8">
+        <div className="w-full">
           <div className={theme.metersRule}>
             {Object.entries(state.stats).map(([key, value]) => (
               <Meter

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { DialogueHistoryEntry } from "@/lib/dialogue";
-import { coco, type CocoDialogueContext } from "@/lib/orchestrator/coco";
+import { coco, type CocoDialogueContext } from "@/lib/orchestrator/agent/coco";
 
 type ClientCocoContext = Pick<
   CocoDialogueContext,

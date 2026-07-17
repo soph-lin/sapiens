@@ -1,4 +1,5 @@
 export { DialogueEngine, applyEffect, evaluateCondition, interpolate } from "./engine";
+export type { EngineSnapshot } from "./engine";
 export { getStoryStatKeys, validateStory, validateStoryPayload } from "./validate";
 export type {
   Choice,

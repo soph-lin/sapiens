@@ -1,17 +1,30 @@
 import { ORCHESTRATOR_CONFIG } from "../orchestrator/config";
-import type { FunctionToolDefinition } from "../orchestrator/types";
+import type {
+  AnthropicWebSearchToolDefinition,
+  FunctionToolDefinition,
+} from "../orchestrator/types";
 import type {
   AgentClient,
   AgentGeneration,
   AgentGenerationRequest,
 } from "./agent-client";
 
+type AnthropicWebSearchResult = {
+  type?: string;
+  url?: string;
+  title?: string;
+  error_code?: string;
+};
+
 type AnthropicContentBlock = {
-  type: "text" | "tool_use";
+  type: string;
   text?: string;
   id?: string;
   name?: string;
   input?: unknown;
+  tool_use_id?: string;
+  citations?: Array<{ url?: string; title?: string }>;
+  content?: AnthropicWebSearchResult[] | AnthropicWebSearchResult;
 };
 
 type AnthropicResponse = {
@@ -31,13 +44,92 @@ type AnthropicTool = {
   strict?: boolean;
 };
 
+function isAnthropicWebSearchTool(
+  tool: AnthropicWebSearchToolDefinition,
+): boolean {
+  return tool.type === "web_search_20250305" && tool.name === "web_search";
+}
+
 function anthropicTools(input: AgentGenerationRequest, outputTool: AnthropicTool) {
   return [
     ...(input.tools ?? [])
       .filter((tool): tool is FunctionToolDefinition => tool.type === "function")
       .map((tool) => toolToAnthropic(tool)),
+    ...(input.tools ?? []).filter(
+      (tool): tool is AnthropicWebSearchToolDefinition =>
+        tool.type === "web_search_20250305" && isAnthropicWebSearchTool(tool),
+    ),
     outputTool,
   ];
+}
+
+function responseCitations(content: AnthropicContentBlock[]): Array<{ url: string; title?: string }> {
+  const citations = content.flatMap((block) => {
+    const toolResults =
+      block.type === "web_search_tool_result" && Array.isArray(block.content)
+        ? block.content
+        : [];
+    return [...(block.citations ?? []), ...toolResults];
+  });
+  return Array.from(
+    new Map(
+      citations
+        .filter((citation): citation is { url: string; title?: string } => Boolean(citation.url))
+        .map((citation) => [citation.url, { url: citation.url, title: citation.title }]),
+    ).values(),
+  );
+}
+
+function webSearchQuery(input: unknown): string | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const query = (input as { query?: unknown }).query;
+  return typeof query === "string" ? query : undefined;
+}
+
+function logWebSearch(agent: string, label: string, content: AnthropicContentBlock[]) {
+  const attempts = content.filter((block) => block.type === "server_tool_use" && block.name === "web_search");
+  const resultBlocks = content.filter((block) => block.type === "web_search_tool_result");
+  const usedResultIds = new Set<string>();
+
+  if (attempts.length && agent === "actor") {
+    console.info("Conducting web search...");
+  }
+
+  for (const attempt of attempts) {
+    const query = webSearchQuery(attempt.input);
+    console.info(
+      `[${label}] attempts web search { query: ${JSON.stringify(query ?? "")} }`,
+    );
+
+    const matchedIndex = resultBlocks.findIndex((block) => {
+      if (usedResultIds.has(block.tool_use_id ?? block.id ?? "")) return false;
+      if (attempt.id && block.tool_use_id) return block.tool_use_id === attempt.id;
+      return true;
+    });
+    const resultBlock = matchedIndex >= 0 ? resultBlocks[matchedIndex] : undefined;
+    if (resultBlock) {
+      usedResultIds.add(resultBlock.tool_use_id ?? resultBlock.id ?? String(matchedIndex));
+    }
+
+    if (!resultBlock) {
+      console.info("Web search failed: no result returned");
+      continue;
+    }
+
+    const resultContent = resultBlock.content;
+    if (
+      resultContent &&
+      !Array.isArray(resultContent) &&
+      resultContent.type === "web_search_tool_result_error"
+    ) {
+      console.info(`Web search failed: ${resultContent.error_code ?? "unknown error"}`);
+      continue;
+    }
+
+    const results = (Array.isArray(resultContent) ? resultContent : [])
+      .filter((result) => result.type === "web_search_result" && result.url);
+    console.info(`Web search succeeded with ${results.length} results!`);
+  }
 }
 
 function toolToAnthropic(tool: FunctionToolDefinition): AnthropicTool {
@@ -64,6 +156,10 @@ function invalidNativeStructuredOutputMessage(response: AnthropicResponse): stri
     lines.push(`Claude stop reason: ${response.stop_reason}`);
   }
   return lines.join("\n");
+}
+
+function maxTokensMessage(agent: string): string {
+  return `${agent} reached max output tokens before finishing`;
 }
 
 export class AnthropicClient implements AgentClient {
@@ -94,6 +190,7 @@ export class AnthropicClient implements AgentClient {
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let toolCalls = 0;
+    const citations = new Map<string, { url: string; title?: string }>();
 
     for (let round = 0; round < ORCHESTRATOR_CONFIG.maxToolRounds; round += 1) {
       input.progress?.({
@@ -132,6 +229,9 @@ export class AnthropicClient implements AgentClient {
           };
       input.trace?.({ agent: input.agent, kind: "request", payload: requestBody });
       const response = await this.request<AnthropicResponse>(requestBody, input.signal);
+      const content = response.content ?? [];
+      logWebSearch(input.agent, input.label?.trim() || input.agent, content);
+      for (const citation of responseCitations(content)) citations.set(citation.url, citation);
       input.trace?.({
         agent: input.agent,
         kind: "response",
@@ -140,7 +240,13 @@ export class AnthropicClient implements AgentClient {
 
       totalInputTokens += response.usage?.input_tokens ?? 0;
       totalOutputTokens += response.usage?.output_tokens ?? 0;
-      const content = response.content ?? [];
+      if (response.stop_reason === "pause_turn") {
+        messages.push({ role: "assistant", content });
+        continue;
+      }
+      if (response.stop_reason === "max_tokens") {
+        throw new Error(maxTokensMessage(input.agent));
+      }
       if (input.nativeStructuredOutput) {
         const outputText = content.find(
           (block) => block.type === "text" && typeof block.text === "string",
@@ -173,7 +279,7 @@ export class AnthropicClient implements AgentClient {
             phase: "model",
             message: "The model finished drafting the result.",
           });
-          return { output, ...record };
+          return { output, citations: Array.from(citations.values()), ...record };
         }
       }
       if (input.nativeStructuredOutput) {
@@ -207,6 +313,7 @@ export class AnthropicClient implements AgentClient {
         });
         return {
           output: outputBlock.input as T,
+          citations: Array.from(citations.values()),
           ...record,
         };
       }

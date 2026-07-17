@@ -2,6 +2,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+// The generated client is intentionally imported from the project output so dev HMR reloads it after schema changes.
 const databaseUrl = process.env.DATABASE_URL;
 
 if (!databaseUrl) throw new Error("DATABASE_URL is required to connect to Prisma");

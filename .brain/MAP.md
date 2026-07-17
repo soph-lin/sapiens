@@ -38,6 +38,10 @@ role. Each layer has an `id`, `name`, row-major `tiles` array, generated
 `border` overlay, and positioned `items` collection. Labels are stable one-based
 atlas labels; filenames remain a renderer concern.
 
+Furniture orientation/state variants, shared shop/draw catalog behavior, and
+surface placement (small items on tables/counters) are documented in
+`.brain/features/ITEMS.md`.
+
 The Rectangle tool exposes eight source presets: Regions 1–4 paired with wall
 or floor. It uses only each region's four solid body columns: sheet columns 2–5
 for Region 1, 6–9 for Region 2, 10–13 for Region 3, and 14–17 for Region 4.
@@ -65,6 +69,11 @@ followed by floor rows in the same coherent region.
 Room connectors start and end on facing room edges and route their bend through
 the open space between footprints, keeping corridor carving out of room
 interiors.
+
+The item palette collapses furniture and small-item variants that share an
+identity, including duplicate folder sprites and `-side`, `-back`, `-on`, and
+`-full` variants. The canonical item is placed by default; with an item
+selected, `A` and `D` cycle its available front/side/back orientation assets.
 
 ### Database upload shape
 
@@ -129,25 +138,40 @@ The View action opens `/draw/view` in a new tab and reads the current local draf
 Movement is implemented in `src/lib/game/movement.ts`: the player occupies one
 tile by one tile, can only enter visible floor cells, cannot cross the map
 boundary, and cannot overlap furniture listed in
-`src/lib/game/config.ts`. The player is currently rendered as a temporary
+`src/lib/game/config.ts`. Rectangular furniture uses its placed tile bounds by
+default. Irregular furniture declares collision masks in
+`src/lib/game/collision.ts` using **tile-local** holes or solids relative to the
+item origin (not source pixels), so a 1×1 actor can enter openings. The kitchen
+counter (7×4 tiles) removes a bottom-left `6×2` hole at local `(0, 2)`, matching
+its L-shaped transparent pocket; `sourceHoleToTileHole` converts `/slice`
+source-pixel notches into that grid. Item **Z triggers** use the same solids for
+collidable furniture and the full footprint for non-collidable small items
+(`itemTriggerRects`); see `.brain/features/ITEMS.md`. The player is currently rendered as a temporary
 rectangle by `src/app/components/game/Player.tsx`; its movement tween uses the
 shared `PLAYER_SPEED` setting in `src/lib/game/config.ts`. The walk-through
-does not show editor grid lines and displays a fixed `VIEW_WIDTH` by
-`VIEW_HEIGHT` tile camera from `src/lib/game/config.ts` that follows the player
-without a scrollbar. Spawn searches for the
+does not show editor grid lines and sizes its tile camera from the renderer
+container (`MapRenderer` measures available space and derives visible tile
+counts). The camera follows the player without a scrollbar. Spawn searches for the
 first valid floor position; if none exists, the player is omitted and
 the game view shows a `No floor available` error toast.
 
 The shared renderer is also used by `/home-2d`; its `GameController` owns the
 gameplay state and display orchestration while the route page remains a thin
 wrapper. Non-visual NPC conversation state and actor requests live in
-`src/lib/game/useNpcDialogue.ts`; `src/app/components/game/MapRenderer.tsx`
+`src/lib/game/npc/useNpcDialogue.ts`; `src/app/components/game/MapRenderer.tsx`
 only adapts that view model into displayable UI.
 That controller loads the published
 map named `myroom`; a missing or failed map load shows an error without
-rendering a canvas. It adds every available star character from the voyage
-summaries as a wandering NPC, using `NPC_SPRITE_SCALE` and a one-by-one
-tile collision footprint. Press `Z` while facing an adjacent NPC to open the
+rendering a canvas, surfaced through the shared React Hot Toast UI instead of
+an inline status panel. Star/NPC load failures (and an empty guest list) use
+the randomized `NPC_ERROR_LABELS` toast copy; actor/LLM failures during
+conversation use `BACKEND_ERROR_LABELS` toasts and a spoken `...` beat; Space
+closes the conversation instead of opening topics/follow-up. Raw API
+details stay in `console.error`. It adds every available star character from the voyage
+summaries as a wandering NPC. Sprite size uses `npcSpriteScale(ageRange)` from
+the character/sprite `Asset.ageRange` (`baby` 1, `child` 3, `teenager` 4,
+`adult`/`elderly`/`young adult` 5), with a one-by-one tile collision footprint.
+Press `Z` while facing an adjacent NPC to open the
 space-themed `DialogueBox`; the actor handles the greeting and three suggested
 questions, while the free-form question is answered by Coco.
 

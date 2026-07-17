@@ -67,7 +67,7 @@ export const THEMES: Record<DialogueThemeId, DialogueTheme> = {
     body: "font-display text-[1.65rem] leading-[1.35] tracking-[-0.015em] text-neutral-950 sm:text-[1.85rem]",
     bodyMuted:
       "text-[1.05rem] leading-relaxed text-neutral-700 sm:text-[1.125rem]",
-    hint: "mt-auto pt-16 text-[11px] tracking-[0.16em] uppercase text-neutral-400 transition-colors group-hover:text-neutral-700 group-focus-visible:text-neutral-700",
+    hint: "text-[11px] tracking-[0.16em] uppercase text-neutral-400 transition-colors group-hover:text-neutral-700 group-focus-visible:text-neutral-700",
     choiceSelected: "bg-neutral-50",
     choiceIdle: "bg-transparent hover:bg-neutral-50/70",
     choiceIndex: "text-neutral-400",
@@ -113,7 +113,7 @@ export const THEMES: Record<DialogueThemeId, DialogueTheme> = {
     body: "font-space text-[1.65rem] leading-[1.35] tracking-[-0.015em] text-white sm:text-[1.85rem]",
     bodyMuted:
       "text-[1.05rem] leading-relaxed text-white/70 sm:text-[1.125rem]",
-    hint: "mt-auto pt-16 text-[11px] tracking-[0.16em] uppercase text-white/40 transition-colors group-hover:text-white/75 group-focus-visible:text-white/75",
+    hint: "text-[11px] tracking-[0.16em] uppercase text-white/40 transition-colors group-hover:text-white/75 group-focus-visible:text-white/75",
     choiceSelected: "bg-white/10",
     choiceIdle: "bg-transparent hover:bg-white/5",
     choiceIndex: "text-white/40",

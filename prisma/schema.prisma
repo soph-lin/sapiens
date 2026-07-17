@@ -18,23 +18,269 @@ enum AssetType {
   COLLECTIBLE
 }
 
+enum AgeRange {
+  BABY
+  CHILD
+  TEENAGER
+  YOUNG_ADULT
+  ADULT
+  ELDERLY
+}
+
 enum StoryGenRunStatus {
   ongoing
   fail
   succeed
 }
 
+enum UserRole {
+  teacher
+  student
+}
+
+enum PublicationStatus {
+  draft
+  published
+  archived
+}
+
+enum ClassroomSourceMode {
+  free
+  restricted
+}
+
+enum FieldNoteAuthorType {
+  user
+  bot
+}
+
+enum StarstreamLogType {
+  post
+  visitorNote
+}
+
+model User {
+  id               String                  @id @default(cuid())
+  username         String                  @unique
+  displayName      String
+  role             UserRole
+  createdAt        DateTime                @default(now())
+  memberships      ClassroomMembership[]
+  taughtClasses    Classroom[]             @relation("ClassroomTeacher")
+  journeys         Journey[]               @relation("JourneyCreator")
+  assignments      ClassroomAssignment[]   @relation("AssignmentCreator")
+  notes            FieldNote[]             @relation("FieldNoteAuthor")
+  publishedNotes   FieldNote[]             @relation("FieldNotePublisher")
+  starstreamLogs   StarstreamLog[]
+  starstreamLikes  StarstreamLike[]
+  progress         VoyageProgress[]
+  publishedStories Story[]                 @relation("StoryPublisher")
+  createdStories   Story[]                 @relation("StoryCreator")
+}
+
 model Story {
-  id          String       @id @default(cuid())
-  slug        String       @unique
-  topic       String
-  synopsis    Json?
-  storyJson   Json
-  characters  Character[]
-  collectible Collectible?
-  genRun      StoryGenRun?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id               String                  @id @default(cuid())
+  slug             String                  @unique
+  topic            String
+  synopsis         Json?
+  storyJson        Json
+  status           PublicationStatus       @default(draft)
+  publishedAt      DateTime?
+  publishedById    String?
+  createdById      String?
+  report           Json?
+  characters       Character[]
+  collectible      Collectible?
+  genRun           StoryGenRun?
+  journeyVoyages   JourneyVoyage[]
+  storyAssignments ClassroomAssignment[]   @relation("AssignmentStory")
+  fieldNotes       FieldNote[]
+  starstreamLogs   StarstreamLog[]
+  progress         VoyageProgress[]
+  publishedBy      User?                   @relation("StoryPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  createdBy        User?                   @relation("StoryCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([status])
+  @@index([publishedById])
+}
+
+model Classroom {
+  id              String                @id @default(cuid())
+  name            String
+  code            String                @unique
+  teacherId       String
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  sourceMode      ClassroomSourceMode   @default(free)
+  approvedDomains Json?
+  teacher         User                  @relation("ClassroomTeacher", fields: [teacherId], references: [id], onDelete: Cascade)
+  memberships     ClassroomMembership[]
+  assignments     ClassroomAssignment[]
+
+  @@index([teacherId])
+}
+
+model ClassroomMembership {
+  id          String    @id @default(cuid())
+  classroomId String
+  userId      String
+  joinedAt    DateTime  @default(now())
+  classroom   Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([classroomId, userId])
+  @@index([userId])
+}
+
+model Journey {
+  id          String                @id @default(cuid())
+  title       String
+  description String?
+  status      PublicationStatus     @default(draft)
+  createdById String
+  publishedAt DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  createdBy   User                  @relation("JourneyCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  voyages     JourneyVoyage[]
+  assignments ClassroomAssignment[]
+
+  @@index([createdById])
+  @@index([status])
+}
+
+model JourneyVoyage {
+  id        String  @id @default(cuid())
+  journeyId String
+  storyId   String
+  position  Int
+  journey   Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  story     Story   @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([journeyId, position])
+  @@unique([journeyId, storyId])
+  @@index([storyId])
+}
+
+model ClassroomAssignment {
+  id            String                  @id @default(cuid())
+  classroomId   String
+  createdById   String
+  storyId       String?
+  journeyId     String?
+  title         String
+  status        PublicationStatus       @default(draft)
+  learningGuide Json?
+  lessonPlan    Json?
+  sources       Json?
+  publishedAt   DateTime?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  classroom     Classroom               @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  createdBy     User                    @relation("AssignmentCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  story         Story?                  @relation("AssignmentStory", fields: [storyId], references: [id], onDelete: Cascade)
+  journey       Journey?                @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  notes          FieldNote[]
+  starstreamLogs StarstreamLog[]
+  progress       VoyageProgress[]
+
+  @@index([classroomId, status])
+  @@index([createdById])
+  @@index([storyId])
+  @@index([journeyId])
+}
+
+model FieldNote {
+  id            String               @id @default(cuid())
+  assignmentId  String?
+  storyId       String
+  authorId      String
+  authorType    FieldNoteAuthorType  @default(user)
+  authorName    String?
+  sources       Json?
+  title         String?
+  content       Json
+  status        PublicationStatus    @default(draft)
+  publishedById String?
+  publishedAt   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  assignment    ClassroomAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  story         Story                @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  author        User                 @relation("FieldNoteAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  publishedBy   User?                @relation("FieldNotePublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  starstreamLog StarstreamLog?
+
+  @@index([assignmentId, storyId, status])
+  @@index([authorId])
+}
+
+/// Public Starstream forum post. Private drafts stay on FieldNote; publishing upserts a log.
+model StarstreamLog {
+  id           String              @id @default(cuid())
+  parentId     String?
+  allowReplies Boolean             @default(true)
+  type         StarstreamLogType   @default(post)
+  assignmentId String?
+  storyId      String
+  authorId     String
+  authorType   FieldNoteAuthorType @default(user)
+  authorName   String?
+  /// Provenance when this root post was published from a FieldNote.
+  fieldNoteId  String?             @unique
+  title        String?
+  content      Json
+  /// Attached links/videos: `[{ url, kind?: "link"|"video", label?: string }]`.
+  attachments  Json?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  parent       StarstreamLog?      @relation("StarstreamReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies      StarstreamLog[]     @relation("StarstreamReplies")
+  likes        StarstreamLike[]
+  assignment   ClassroomAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  story        Story               @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  author       User                @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  fieldNote    FieldNote?          @relation(fields: [fieldNoteId], references: [id], onDelete: SetNull)
+
+  @@index([assignmentId, storyId, createdAt])
+  @@index([parentId, createdAt])
+  @@index([authorId])
+  @@index([storyId, createdAt])
+  @@index([type])
+}
+
+model StarstreamLike {
+  id        String        @id @default(cuid())
+  logId     String
+  userId    String
+  createdAt DateTime      @default(now())
+  log       StarstreamLog @relation(fields: [logId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([logId, userId])
+  @@index([userId])
+}
+
+model VoyageProgress {
+  id            String              @id @default(cuid())
+  studentId     String
+  storyId       String
+  assignmentId  String?
+  progress      Json
+  completed     Boolean             @default(false)
+  currentNodeId String?
+  startedAt     DateTime            @default(now())
+  completedAt   DateTime?
+  updatedAt     DateTime            @updatedAt
+  student       User                @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  story         Story               @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  assignment    ClassroomAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+
+  @@unique([studentId, storyId])
+  @@index([assignmentId])
+  @@index([storyId])
 }
 
 model Map {
@@ -46,27 +292,28 @@ model Map {
 }
 
 model Character {
-  id          String  @id @default(cuid())
-  storyId     String
-  name        String
-  description String
-  known       Boolean
-  assetId     String
+  id            String   @id @default(cuid())
+  storyId       String
+  name          String
+  description   String
+  known         Boolean
+  assetId       String
   spriteAssetId String?
+  ageRange      AgeRange @default(ADULT)
 
-  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  asset Asset @relation("CharacterAsset", fields: [assetId], references: [id])
+  story       Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  asset       Asset  @relation("CharacterAsset", fields: [assetId], references: [id])
   spriteAsset Asset? @relation("CharacterSpriteAsset", fields: [spriteAssetId], references: [id])
 
   @@index([storyId])
 }
 
 model Collectible {
-  id          String  @id @default(cuid())
-  storyId     String  @unique
+  id          String @id @default(cuid())
+  storyId     String @unique
   name        String
   description String
-  assetId     String  @unique
+  assetId     String @unique
 
   story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
   asset Asset @relation("CollectibleAsset", fields: [assetId], references: [id])
@@ -79,12 +326,13 @@ model Asset {
   mimeType  String    @default("image/png")
   data      Bytes
   metadata  Json?
+  ageRange  AgeRange?
   createdAt DateTime  @default(now())
 
-  characterOwners  Character[]  @relation("CharacterAsset")
-  characterSpriteOwners Character[] @relation("CharacterSpriteAsset")
-  collectibleOwner Collectible? @relation("CollectibleAsset")
-  frames           AssetFrame[]
+  characterOwners       Character[]  @relation("CharacterAsset")
+  characterSpriteOwners Character[]  @relation("CharacterSpriteAsset")
+  collectibleOwner      Collectible? @relation("CollectibleAsset")
+  frames                AssetFrame[]
 }
 
 model AssetFrame {
@@ -103,22 +351,24 @@ model AssetFrame {
 }
 
 model StoryGenRun {
-  id         String   @id @default(cuid())
-  slug       String?  @unique
-  storyId    String?  @unique
-  status     StoryGenRunStatus
-  progress   Json
-  usage      Json?
-  steering   Json?
-  modelConfig Json?
-  storyConfig Json?
+  id               String            @id @default(cuid())
+  slug             String?           @unique
+  storyId          String?           @unique
+  status           StoryGenRunStatus
+  progress         Json
+  usage            Json?
+  steering         String?
+  topic            String?
+  modelConfig      Json?
+  storyConfig      Json?
+  curatorOutput    Json?
   researcherOutput Json?
-  directorOutput Json?
-  writerOutput Json?
-  artistOutput Json?
-  error      String?
-  startedAt  DateTime @default(now())
-  finishedAt DateTime?
+  directorOutput   Json?
+  writerOutput     Json?
+  artistOutput     Json?
+  error            String?
+  startedAt        DateTime          @default(now())
+  finishedAt       DateTime?
 
   story Story? @relation(fields: [storyId], references: [id], onDelete: Cascade)
 }

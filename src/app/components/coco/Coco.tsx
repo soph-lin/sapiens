@@ -833,7 +833,9 @@ export function Coco({
         aria-label="Coco — drag to rotate"
         className="absolute inset-0 h-full w-full cursor-grab touch-none"
       />
-      {liveExpression === "sleeping" && <Snoring />}
+      {liveExpression === "sleeping" && (
+        <Snoring centerX={centerX} centerY={centerY} scale={cocoScale} />
+      )}
       <Hearts active={liveExpression === "happy"} />
     </>
   );

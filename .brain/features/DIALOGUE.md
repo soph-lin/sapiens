@@ -97,7 +97,7 @@ Stories that mutate numeric variables must set `"metadata": { "stats": true }`. 
 The writer's provider-facing JSON Schema lives in `src/lib/dialogue/json-schema.ts`. Anthropic's
 structured-output subset requires `additionalProperties: false` on objects, so the provider
 transport represents `nodes` as an array of node objects and `metadata.statDefaults` as an array
-of `{ key, value }` entries. `src/lib/orchestrator/writer.ts` normalizes both back to the runtime
+of `{ key, value }` entries. `src/lib/orchestrator/agent/writer.ts` normalizes both back to the runtime
 map/object shape before validation. `validateStory()` remains authoritative for rules that JSON
 Schema does not express well, including node-key matching, `next` references, flag/stat value
 compatibility, and the `metadata.stats` requirement.
@@ -112,22 +112,10 @@ When changing the dialogue JSON shape, update and verify these dependencies toge
 4. `src/lib/dialogue/engine.ts` — state transitions and presentation for the changed node fields.
 5. `src/lib/dialogue/index.ts` — public exports when types or runtime functions change.
 6. `src/lib/prompts/WRITER.md` — JSON examples, field instructions, and authoring-archetype guidance.
-7. `src/lib/orchestrator/writer.ts` — only when the Writer's top-level output contract changes; dialogue node changes normally flow through the imported schema automatically.
+7. `src/lib/orchestrator/agent/writer.ts` — only when the Writer's top-level output contract changes; dialogue node changes normally flow through the imported schema automatically.
 8. `src/lib/content/canon/` and `src/lib/content/voyages/` — existing story fixtures that use the changed shape.
 9. Dialogue UI consumers under `src/app/components/dialogue/` and feature consumers under
    `src/app/components/fieldnotes/` — when presentation fields or runtime views change.
-
-## UI boundary
-
-`DialogueBox` only renders a prepared `Presentable` view. `DialoguePanel` adds shared
-visual presentation such as the header, portrait, atmosphere, and box. Higher-level
-wrappers own dialogue engines and providers: `StoryDialogue` owns story sessions,
-the sail-only `components/fieldnotes/FieldCompanion` owns Coco and notes surfaces, and the map
-NPC hook owns actor conversations.
-
-After editing, run the type checker and linter, validate existing content through `validateStory`,
-and inspect any affected dialogue UI paths. Keep `DIALOGUE.md` and `WRITER.md` synchronized with
-the code contract.
 
 ## Runtime
 

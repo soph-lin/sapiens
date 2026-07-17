@@ -16,6 +16,9 @@ For a character, expand the supplied name and description into:
 - Clothing, accessories, and culturally relevant details
 - Approximate historical period and role
 - Required framing: portrait, shoulder-up
+- Honor the supplied `ageRange` exactly: `baby`, `child`, `teenager`, `young adult`,
+  `adult`, or `elderly`. Do not draw a historical person at their familiar adult age when
+  another range is supplied.
 
 Example: Abraham Lincoln with his distinctive tall, lean face, deep-set eyes, prominent cheekbones, strong nose, dark swept-back hair, and iconic chin curtain beard without a mustache. He wears a formal black 19th-century suit, white shirt, and black bow tie. Shoulder-up portrait, dignified and thoughtful expression.
 
@@ -32,6 +35,8 @@ For a `character_sprite`, expand the supplied name and description into:
 - Distinctive clothing, accessories, silhouette, and historically grounded details
 - A low top-down camera view with clean cardinal-direction readability
 - No portrait framing, shoulder-up framing, background, or invented identity details
+- Use the person's most recognizable/common historical age for the sprite, independently of
+  the portrait `ageRange`.
 
 ## Deliverables
 

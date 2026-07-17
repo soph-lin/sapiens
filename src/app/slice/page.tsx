@@ -177,6 +177,10 @@ function formatConcavityDirection(direction: ConcavityDirection) {
     .join(" ");
 }
 
+function formatConcavityPoint(point: ConcavityPoint) {
+  return `${formatConcavityDirection(point.direction)} at local x ${point.x}, y ${point.y}`;
+}
+
 function makeSelection(start: PixelPoint, end: PixelPoint): PixelSelection {
   const x = Math.min(start.x, end.x);
   const y = Math.min(start.y, end.y);
@@ -799,6 +803,13 @@ export default function SlicePage() {
   const selectedBox = useMemo(
     () => cropBoxes.find((box) => box.id === selectedId) ?? null,
     [cropBoxes, selectedId],
+  );
+  const selectedConcavity = useMemo(
+    () =>
+      selectedBox?.concavities?.find(
+        (point) => point.id === selectedConcavityId,
+      ) ?? null,
+    [selectedBox, selectedConcavityId],
   );
   const boxNumberById = useMemo(
     () =>
@@ -1635,7 +1646,11 @@ export default function SlicePage() {
                     {boxNumberById.get(selectedBox.id) ?? "--"}), x{" "}
                     {selectedBox.x}, y {selectedBox.y}, {selectedBox.width} x{" "}
                     {selectedBox.height}px
-                    {selectedConcavityId ? "; point selected" : ""}
+                    {(selectedBox.concavities?.length ?? 0) > 0
+                      ? `; notches: ${(selectedBox.concavities ?? [])
+                          .map(formatConcavityPoint)
+                          .join("; ")}`
+                      : ""}
                   </p>
                 ) : (
                   <p>Click a border, or drag to add one manually.</p>
@@ -1924,9 +1939,24 @@ export default function SlicePage() {
                       {selectedBox.x}, y {selectedBox.y}
                     </p>
                     <p className="mt-1 font-space text-xs leading-5 text-[#d8cab0]">
-                      Click inside this crop to add a{" "}
-                      {formatConcavityDirection(concavityDirection)} notch. z
-                      Shift changes corner; Delete removes a highlighted point.
+                      {(selectedBox.concavities?.length ?? 0) > 0 ? (
+                        <>
+                          {selectedConcavity
+                            ? `Notch ${formatConcavityPoint(selectedConcavity)}.`
+                            : `Notches: ${(selectedBox.concavities ?? [])
+                                .map(formatConcavityPoint)
+                                .join("; ")}.`}{" "}
+                          Shift changes corner; Delete removes a highlighted
+                          point.
+                        </>
+                      ) : (
+                        <>
+                          Click inside this crop to add a{" "}
+                          {formatConcavityDirection(concavityDirection)} notch.
+                          Shift changes corner; Delete removes a highlighted
+                          point.
+                        </>
+                      )}
                     </p>
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       <button

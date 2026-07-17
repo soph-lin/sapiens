@@ -22,6 +22,138 @@ body {
   font-family: var(--font-sans);
 }
 
+html:has(.home-2d-screen),
+body:has(.home-2d-screen) {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.map-editor-page,
+.map-home-page {
+  position: relative;
+  isolation: isolate;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(33, 92, 91, 0.16), transparent 28rem),
+    radial-gradient(circle at 94% 12%, rgba(139, 82, 30, 0.12), transparent 26rem),
+    #080a0d;
+}
+
+.map-editor-page::before,
+.map-home-page::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  opacity: 0.26;
+  background-image:
+    linear-gradient(rgba(178, 232, 232, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(178, 232, 232, 0.035) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(to bottom, black, transparent 72%);
+}
+
+.map-editor-page > :not(canvas):not([data-map-overlay]),
+.map-home-page > :not(canvas):not([data-map-overlay]) {
+  position: relative;
+}
+
+.map-renderer {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(169, 235, 229, 0.32) transparent;
+}
+
+.map-renderer--fullscreen,
+.map-renderer:fullscreen {
+  position: relative;
+  box-sizing: border-box;
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100dvh !important;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: #080b0d;
+}
+
+.map-renderer--fullscreen .map-renderer-stage,
+.map-renderer:fullscreen .map-renderer-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.map-renderer--fullscreen .map-renderer-viewport,
+.map-renderer:fullscreen .map-renderer-viewport {
+  border-radius: 0;
+  max-width: none;
+  border: none;
+  box-shadow: none;
+}
+
+.map-renderer:not(.map-renderer--fullscreen) {
+  --map-screen-pad-y: 1.5rem;
+  --map-screen-pad-x: 1.5rem;
+  --map-dialogue-max-height: min(22rem, 34dvh);
+
+  padding-block: var(--map-screen-pad-y);
+  padding-inline: var(--map-screen-pad-x);
+}
+
+.map-renderer-stage {
+  position: relative;
+  z-index: 0;
+}
+
+/* Overlay: map keeps its viewport; portrait sits above the box without a
+   scrollport that clips the head. Portrait size tracks the viewport so
+   browser zoom / short windows don't let dialogue dominate the map. */
+.map-dialogue-stack {
+  bottom: var(--map-screen-pad-y, 1.5rem);
+  padding-bottom: 0;
+  overflow: visible;
+}
+
+.map-renderer--fullscreen .map-dialogue-stack,
+.map-renderer:fullscreen .map-dialogue-stack {
+  bottom: 1rem;
+}
+
+.map-dialogue-portrait img {
+  width: clamp(4.5rem, 12dvh, 8rem);
+  height: clamp(4.5rem, 12dvh, 8rem);
+}
+
+.map-dialogue {
+  max-height: var(--map-dialogue-max-height, min(22rem, 34dvh));
+  border-color: rgba(187, 237, 232, 0.16);
+  background:
+    linear-gradient(135deg, rgba(13, 26, 29, 0.98), rgba(5, 8, 11, 0.98)),
+    #05080a;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.56),
+    0 0 34px rgba(49, 190, 184, 0.08);
+}
+
+.map-renderer--fullscreen .map-dialogue,
+.map-renderer:fullscreen .map-dialogue {
+  --map-dialogue-max-height: min(22rem, 32dvh);
+}
+
+.map-renderer-viewport {
+  border: 1px solid rgba(188, 240, 234, 0.12);
+  background: #080b0d;
+  box-shadow:
+    0 0 0 5px rgba(2, 5, 7, 0.42),
+    0 0 0 6px rgba(188, 240, 234, 0.04) inset,
+    0 22px 60px rgba(0, 0, 0, 0.34) inset;
+}
+
 .font-display {
   font-family: var(--font-display);
 }
@@ -196,6 +328,34 @@ body {
   background-clip: padding-box;
 }
 
+.scrollbar-no-track {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(207, 250, 254, 0.34) transparent;
+  scrollbar-gutter: stable;
+}
+
+.scrollbar-no-track::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.scrollbar-no-track::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-no-track::-webkit-scrollbar-thumb {
+  background: rgba(207, 250, 254, 0.34);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 9999px;
+}
+
+.scrollbar-no-track::-webkit-scrollbar-thumb:hover {
+  background: rgba(207, 250, 254, 0.58);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
 @keyframes choice-cascade {
   from {
     opacity: 0;
@@ -205,6 +365,23 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes loading-screen-bar {
+  0% {
+    transform: translateX(-140%);
+  }
+  45%,
+  65% {
+    transform: translateX(145%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+.loading-screen-bar {
+  animation: loading-screen-bar 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .choice-cascade-item {

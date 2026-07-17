@@ -118,6 +118,12 @@ function conditionPasses(state: State, condition?: Condition): boolean {
   return evaluateCondition(state, condition);
 }
 
+export type EngineSnapshot = {
+  currentId: string;
+  state: State;
+  ended: boolean;
+};
+
 export class DialogueEngine {
   private readonly story: Story;
   private readonly statKeys: string[];
@@ -140,6 +146,22 @@ export class DialogueEngine {
 
   getState(): State {
     return cloneState(this.state);
+  }
+
+  /** Capture the engine position and state so it can be restored later. */
+  getSnapshot(): EngineSnapshot {
+    return {
+      currentId: this.currentId,
+      state: cloneState(this.state),
+      ended: this.ended,
+    };
+  }
+
+  /** Restore a previously captured snapshot (used for stepping back). */
+  restore(snapshot: EngineSnapshot): void {
+    this.currentId = snapshot.currentId;
+    this.state = cloneState(snapshot.state);
+    this.ended = snapshot.ended;
   }
 
   hasStats(): boolean {

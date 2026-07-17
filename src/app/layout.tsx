@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Manrope, Playfair_Display, Space_Mono } from "next/font/google";
+import { UserProvider } from "@/app/components/user/UserProvider";
+import { getCurrentDemoUser } from "@/lib/demo-auth";
 import "./globals.css";
 
 const playfairDisplay = Playfair_Display({
@@ -25,18 +27,20 @@ export const metadata: Metadata = {
     "Educational exploration — learn by entering interactive worlds.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const user = await getCurrentDemoUser();
+
   return (
     <html
       lang="en"
       className={`${playfairDisplay.variable} ${manrope.variable} ${spaceMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-black text-[#f4f1ea]">
-        {children}
+        <UserProvider initialUser={user}>{children}</UserProvider>
       </body>
     </html>
   );

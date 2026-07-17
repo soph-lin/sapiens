@@ -23,6 +23,11 @@ export const AGENT_CONFIG: Record<ConfiguredAgentName, {
   model: string;
   promptFile: string;
 }> = {
+  curator: {
+    provider: "openai",
+    model: "gpt-5.6-luna",
+    promptFile: "CURATOR.md",
+  },
   researcher: {
     provider: "openai",
     model: "gpt-5.6-luna",
@@ -30,12 +35,12 @@ export const AGENT_CONFIG: Record<ConfiguredAgentName, {
   },
   director: {
     provider: "anthropic",
-    model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5",
+    model: "claude-sonnet-5",
     promptFile: "DIRECTOR.md",
   },
   writer: {
     provider: "anthropic",
-    model: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5",
+    model: "claude-sonnet-5",
     promptFile: "WRITER.md",
   },
   artist: {
@@ -49,9 +54,9 @@ export const AGENT_CONFIG: Record<ConfiguredAgentName, {
     promptFile: "COCO.md",
   },
   actor: {
-    provider: "openai",
-    model: "gpt-5.6-luna",
-    promptFile: "ACTOR.md",
+    provider: "anthropic",
+    model: "claude-sonnet-5",
+    promptFile: "HISTORIAN.md",
   },
 };
 
@@ -62,5 +67,17 @@ export const ORCHESTRATOR_CONFIG = {
   pixelLabBaseUrl: "https://api.pixellab.ai/v2",
   maxToolRounds: 4,
   maxOutputTokens: 32000,
+  /** Max plain-text characters returned per oversized Wikipedia section chunk. */
+  pageChunkChars: 8000,
   maxTries: 3,
+  /** Base delay for non-rate-limit retries; doubles each attempt. */
+  retryBackoffMs: 1000,
+  /** Cap for non-rate-limit retry delays. */
+  retryBackoffMaxMs: 15000,
+  /** Base delay when a rate limit is detected but no wait hint is present. */
+  rateLimitBackoffMs: 5000,
+  /** Cap for rate-limit retry delays (including provider-suggested waits). */
+  rateLimitBackoffMaxMs: 60000,
+  REQUIRED_SOURCES: 3,
+  MAX_FOLLOWUP_SOURCES: 3,
 };

@@ -25,8 +25,18 @@ const LETTER = zLetterDots();
 /** How long one bubble cycle lasts (seconds) */
 const BUBBLE_PERIOD = 2.8;
 
-/** Screen-space zzz — bubble up and fade; never inherits Coco 3D */
-export function Snoring() {
+type SnoringProps = {
+  centerX?: number;
+  centerY?: number;
+  scale?: number;
+};
+
+/** Parent-space zzz — bubble up and fade; never inherits Coco 3D */
+export function Snoring({
+  centerX = COCO_CX,
+  centerY = COCO_CY,
+  scale = COCO_SCALE,
+}: SnoringProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -48,8 +58,9 @@ export function Snoring() {
 
     const resize = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
-      w = window.innerWidth;
-      h = window.innerHeight;
+      const parent = canvas.parentElement;
+      w = parent?.clientWidth || window.innerWidth;
+      h = parent?.clientHeight || window.innerHeight;
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
       canvas.style.width = `${w}px`;
@@ -72,11 +83,11 @@ export function Snoring() {
       ctx.clearRect(0, 0, w, h);
 
       const unit = Math.min(w, h);
-      const cx = w * COCO_CX;
-      const cy = h * COCO_CY;
-      // Spawn near Coco's upper-right
-      const spawnX = cx + unit * COCO_SCALE * 0.2;
-      const spawnY = cy - unit * COCO_SCALE * 0.22;
+      const cx = w * centerX;
+      const cy = h * centerY;
+      // Spawn above Coco's head (keep inside the stage so bubbles stay visible)
+      const spawnX = cx - unit * scale * 0.02;
+      const spawnY = cy - unit * scale * 0.22;
 
       for (let letter = 0; letter < 3; letter++) {
         // Stagger so Zs bubble in sequence
@@ -85,9 +96,9 @@ export function Snoring() {
           ? 0.35 + letter * 0.2
           : (t / BUBBLE_PERIOD + phase) % 1;
 
-        // Rise + drift while bubbling
-        const rise = progress * unit * 0.16;
-        const drift = progress * unit * 0.045 + letter * 10;
+        // Rise + slight drift while bubbling
+        const rise = progress * unit * 0.1;
+        const drift = progress * unit * 0.015 + letter * 5;
         const wobble = reduceMotion
           ? 0
           : Math.sin(progress * Math.PI * 2 + letter) * 4;
@@ -124,12 +135,15 @@ export function Snoring() {
     resize();
     raf = requestAnimationFrame(frame);
     window.addEventListener("resize", resize);
+    const resizeObserver = new ResizeObserver(resize);
+    if (canvas.parentElement) resizeObserver.observe(canvas.parentElement);
 
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
+      resizeObserver.disconnect();
     };
-  }, []);
+  }, [centerX, centerY, scale]);
 
   return (
     <canvas

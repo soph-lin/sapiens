@@ -85,31 +85,9 @@ function rasterizePoly(poly: Vec2[], step: number) {
   return pts;
 }
 
-/** Sailboat — hull + mast + sail (leave geometry alone) */
-const SHIP: Vec2[] = (() => {
-  const pts: Vec2[] = [];
-  for (let x = -0.42; x <= 0.42; x += 0.028) {
-    const depth = 0.08 + 0.04 * Math.cos((x / 0.42) * Math.PI * 0.5);
-    for (let y = 0.12; y <= 0.12 + depth; y += 0.026) {
-      if (Math.abs(x) < 0.38 - (y - 0.12) * 1.8) pts.push({ x, y });
-    }
-  }
-  for (let y = -0.38; y <= 0.14; y += 0.024) pts.push({ x: 0.02, y });
-  for (let x = 0.02; x <= 0.32; x += 0.026) pts.push({ x, y: 0.1 });
-  for (let t = 0; t <= 1; t += 0.04) {
-    const topY = -0.36;
-    const botY = 0.08;
-    const y = topY + (botY - topY) * t;
-    const maxW = 0.28 * t;
-    for (let x = 0.04; x <= 0.04 + maxW; x += 0.026) {
-      pts.push({ x, y });
-    }
-  }
-  pts.push({ x: 0.02, y: -0.42 });
-  pts.push({ x: -0.04, y: -0.38 });
-  pts.push({ x: 0.02, y: -0.34 });
-  return pts;
-})();
+import { SHIP } from "@/lib/game/ship";
+
+/** Sailboat geometry lives in @/lib/game/ship */
 
 const STARS: Vec2[] = (() => {
   const anchors: Vec2[] = [

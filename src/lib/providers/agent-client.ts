@@ -5,7 +5,7 @@ import type {
   ToolDefinition,
   ToolHandler,
 } from "../orchestrator/types";
-import type { UsageCollector } from "../orchestrator/telemetry";
+import type { UsageCollector } from "../orchestrator/tools/telemetry";
 
 export type JsonSchema = {
   name: string;
@@ -33,6 +33,8 @@ export type AgentGenerationRequest = {
   instructions: string;
   prompt: string;
   schema: JsonSchema;
+  /** Display name for logs (e.g. character name for actor web search). */
+  label?: string;
   /** Use a provider-native JSON schema response instead of an output tool when supported. */
   nativeStructuredOutput?: boolean;
   /** Maximum generated tokens for providers that support a request-level output cap. */

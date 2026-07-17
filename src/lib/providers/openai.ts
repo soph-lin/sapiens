@@ -13,6 +13,9 @@ type OpenAIResponse = {
     name?: string;
     arguments?: string;
     call_id?: string;
+    status?: string;
+    action?: unknown;
+    results?: unknown[];
     content?: Array<{
       type?: string;
       text?: string;
@@ -29,6 +32,55 @@ type OpenAIResponse = {
     total_tokens?: number;
   };
 };
+
+function webSearchQuery(input: unknown): string | undefined {
+  if (typeof input === "string") {
+    try {
+      return webSearchQuery(JSON.parse(input) as unknown);
+    } catch {
+      return input;
+    }
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input)) return undefined;
+  const record = input as { query?: unknown; queries?: unknown };
+  if (typeof record.query === "string") return record.query;
+  if (Array.isArray(record.queries) && typeof record.queries[0] === "string") {
+    return record.queries[0];
+  }
+  return undefined;
+}
+
+function logWebSearch(agent: string, label: string, response: OpenAIResponse) {
+  const attempts = (response.output ?? []).filter(
+    (item) => item.type === "web_search_call" || item.name === "web_search",
+  );
+  const citationCount = responseCitations(response).length;
+
+  if (attempts.length && agent === "actor") {
+    console.info("Conducting web search...");
+  }
+
+  for (const attempt of attempts) {
+    const query = webSearchQuery(attempt.action ?? attempt.arguments);
+    console.info(
+      `[${label}] attempts web search { query: ${JSON.stringify(query ?? "")} }`,
+    );
+
+    if (attempt.status === "failed") {
+      console.info("Web search failed: search call failed");
+      continue;
+    }
+    if (attempt.status && attempt.status !== "completed") {
+      console.info(`Web search failed: ${attempt.status}`);
+      continue;
+    }
+
+    const resultCount = Array.isArray(attempt.results)
+      ? attempt.results.length
+      : citationCount;
+    console.info(`Web search succeeded with ${resultCount} results!`);
+  }
+}
 
 function responseCitations(response: OpenAIResponse): Array<{ url: string; title?: string }> {
   const citations = (response.output ?? [])
@@ -115,6 +167,7 @@ export class OpenAIClient implements AgentClient {
       };
       input.trace?.({ agent: input.agent, kind: "request", payload: requestBody });
       const response = await this.request<OpenAIResponse>(requestBody, input.signal);
+      logWebSearch(input.agent, input.label?.trim() || input.agent, response);
       for (const citation of responseCitations(response)) {
         citations.set(citation.url, citation);
       }

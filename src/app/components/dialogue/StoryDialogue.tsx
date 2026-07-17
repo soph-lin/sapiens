@@ -1,12 +1,31 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Toaster } from "react-hot-toast";
-import { FieldCompanion } from "@/app/components/fieldnotes";
+import toast from "react-hot-toast";
+import {
+  FieldCompanion,
+  VoyageTakeawayNote,
+} from "@/app/components/fieldnotes";
+import { ReportMarkdown } from "@/app/components/report";
 import { DialoguePanel } from "./DialoguePanel";
 import { THEMES, type DialogueThemeId } from "./theme";
 import { useDialogueSession } from "./useDialogueSession";
+import type { StoryReport } from "@/lib/orchestrator/agent/flourish";
+
+type ClassSharePrompt = {
+  storyId: string;
+  /** Assigned classroom voyages only. */
+  assignmentId?: string;
+  /**
+   * Assigned voyages require a published note to complete; solo classroom
+   * shares are optional. Defaults to whether `assignmentId` is set.
+   */
+  required?: boolean;
+  /** Solo voyages only show the class note when the owner belongs to a classroom. */
+  showNote?: boolean;
+};
 
 type StoryDialogueProps = {
   scenarioId: string;
@@ -17,6 +36,12 @@ type StoryDialogueProps = {
   atmosphereArt?: string;
   characters?: Array<{ name: string; assetUrl?: string }>;
   collectible?: { name: string; assetUrl?: string };
+  report?: StoryReport;
+  /**
+   * Class-share takeaway at voyage end: assigned voyages (required) or solo
+   * voyages when the cadet belongs to a classroom (optional, below report).
+   */
+  classShare?: ClassSharePrompt;
 };
 
 function findSpeakerAsset(
@@ -40,9 +65,12 @@ export function StoryDialogue({
   atmosphereArt,
   characters = [],
   collectible,
+  report,
+  classShare,
 }: StoryDialogueProps) {
   const theme = THEMES[themeId];
   const [collectibleDismissed, setCollectibleDismissed] = useState(false);
+  const completionAttempted = useRef<string | null>(null);
   const {
     view,
     state,
@@ -52,22 +80,61 @@ export function StoryDialogue({
     typingGateRef,
     advance,
     choose,
+    back,
+    canGoBack,
     restart: restartSession,
   } = useDialogueSession({ scenarioId, story });
-  const speakerAsset = view.kind === "text"
-    ? findSpeakerAsset(view.speaker, characters)
-    : undefined;
+  const speakerAsset =
+    view.kind === "text"
+      ? findSpeakerAsset(view.speaker, characters)
+      : undefined;
   const showCollectible =
     view.kind === "end" && Boolean(collectible) && !collectibleDismissed;
-  const dialoguePoint = view.kind === "choice"
-    ? view.prompt ?? "A choice is waiting."
-    : view.text;
+  const dialoguePoint =
+    view.kind === "choice"
+      ? (view.prompt ?? "A choice is waiting.")
+      : view.text;
   const dialogueSpeaker = view.kind === "text" ? view.speaker : undefined;
 
   const restart = () => {
     setCollectibleDismissed(false);
     restartSession();
   };
+
+  const markVoyageComplete = useCallback(async () => {
+    if (!classShare) return;
+    const key = `${classShare.storyId}:${classShare.assignmentId ?? "solo"}`;
+    if (completionAttempted.current === key) return;
+    completionAttempted.current = key;
+    try {
+      const response = await fetch("/api/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(classShare.assignmentId ? { assignmentId: classShare.assignmentId } : {}),
+          storyId: classShare.storyId,
+          progress: { completed: true },
+          completed: true,
+        }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as { error?: string };
+        throw new Error(payload.error ?? "Could not save voyage completion.");
+      }
+    } catch (error) {
+      completionAttempted.current = null;
+      toast.error(error instanceof Error ? error.message : "Could not save voyage completion.");
+    }
+  }, [classShare]);
+  const handleVoyagePublished = useCallback(() => {
+    void markVoyageComplete();
+  }, [markVoyageComplete]);
+
+  useEffect(() => {
+    if (view.kind === "end" && classShare && !classShare.required) {
+      void markVoyageComplete();
+    }
+  }, [classShare, markVoyageComplete, view.kind]);
 
   return (
     <div className={theme.root}>
@@ -96,6 +163,7 @@ export function StoryDialogue({
           onAdvance={advance}
           onChoose={choose}
           onRestart={restart}
+          onBack={canGoBack ? back : undefined}
           className="flex flex-1 flex-col"
         />
       </main>
@@ -106,6 +174,90 @@ export function StoryDialogue({
         dialogueHistory={dialogueHistory}
         speaker={dialogueSpeaker}
       />
+
+      {view.kind === "end" && report ? (
+        <section
+          className="mx-auto mb-12 w-full max-w-2xl rounded-2xl border border-[#d9cdbf] bg-[#fffaf2] px-6 py-6 text-[#30281f] shadow-[0_16px_50px_rgba(77,58,37,0.08)] sm:px-8"
+          aria-labelledby="story-report-heading"
+        >
+          <p className="font-space text-[9px] uppercase tracking-[0.22em] text-[#96734d]">
+            Voyage report
+          </p>
+          <h2 id="story-report-heading" className="mt-2 font-display text-3xl">
+            What did we learn?
+          </h2>
+          <ReportMarkdown
+            variant="light"
+            className="mt-5"
+            sources={report.sources}
+          >
+            {report.reportText}
+          </ReportMarkdown>
+          <h3 className="mt-6 font-space text-[9px] uppercase tracking-[0.18em] text-[#8e7f6d]">
+            Sources
+          </h3>
+          <ol className="mt-3 list-decimal space-y-2 pl-5 text-xs text-[#6b5038]">
+            {report.sources.map((source) => (
+              <li key={source.url}>
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-[#b9a58e] underline-offset-2 hover:text-[#30281f]"
+                >
+                  {source.title}
+                </a>
+              </li>
+            ))}
+          </ol>
+          {report.furtherReading.length ? (
+            <>
+              <h3 className="mt-6 font-space text-[9px] uppercase tracking-[0.18em] text-[#8e7f6d]">
+                Further reading
+              </h3>
+              <ul className="mt-3 space-y-2 text-xs text-[#6b5038]">
+                {report.furtherReading.map((source) => (
+                  <li key={source.url}>
+                    <a
+                      href={source.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline decoration-[#b9a58e] underline-offset-2 hover:text-[#30281f]"
+                    >
+                      {source.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {classShare ? (
+            <VoyageTakeawayNote
+              storyId={classShare.storyId}
+              assignmentId={classShare.assignmentId}
+              required={classShare.required ?? Boolean(classShare.assignmentId)}
+              canPublish={
+                Boolean(classShare.assignmentId) ||
+                classShare.showNote !== false
+              }
+              onPublished={handleVoyagePublished}
+              embedded
+            />
+          ) : null}
+        </section>
+      ) : null}
+
+      {view.kind === "end" && !report && classShare ? (
+        <VoyageTakeawayNote
+          storyId={classShare.storyId}
+          assignmentId={classShare.assignmentId}
+          required={classShare.required ?? Boolean(classShare.assignmentId)}
+          canPublish={
+            Boolean(classShare.assignmentId) || classShare.showNote !== false
+          }
+          onPublished={handleVoyagePublished}
+        />
+      ) : null}
 
       {showCollectible && collectible ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-6 backdrop-blur-sm">

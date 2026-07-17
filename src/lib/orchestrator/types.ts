@@ -1,4 +1,5 @@
 export type AgentName =
+  | "curator"
   | "researcher"
   | "director"
   | "writer"
@@ -37,7 +38,19 @@ export type BuiltInToolDefinition = {
   type: "web_search";
 };
 
-export type ToolDefinition = FunctionToolDefinition | BuiltInToolDefinition;
+export type AnthropicWebSearchToolDefinition = {
+  /** Anthropic's server-side web search tool. */
+  type: "web_search_20250305";
+  name: "web_search";
+  max_uses?: number;
+  allowed_domains?: string[];
+  blocked_domains?: string[];
+};
+
+export type ToolDefinition =
+  | FunctionToolDefinition
+  | BuiltInToolDefinition
+  | AnthropicWebSearchToolDefinition;
 
 export type ToolHandler = (argumentsJson: string) => Promise<unknown>;
 
@@ -52,6 +65,7 @@ export type AgentProgressEvent = {
   phase: "agent" | "model" | "tool";
   message: string;
   tool?: string;
+  details?: Record<string, unknown>;
 };
 
 export type GeneratedAssetEvent = {
@@ -61,6 +75,7 @@ export type GeneratedAssetEvent = {
   imageDataUrls: string[];
   frames?: Array<{ frameKey: string; dataUrl: string }>;
   metadata?: unknown;
+  ageRange?: string;
 };
 
 export type GeneratedAssetFrame = {

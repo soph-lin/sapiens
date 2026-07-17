@@ -1,4 +1,5 @@
 import { COLLIDABLE_FURNITURE_ASSET_SET } from "./config";
+import { rectOverlapsItem, rectsIntersect } from "./collision";
 import type { MapDocument, MapItem } from "./map";
 
 export const PLAYER_WIDTH = 1;
@@ -71,19 +72,36 @@ export function canActorOccupy(
 
   if (document.layers.some((layer) =>
     layer.items.some((item) =>
-      isCollidableItem(item) && rectanglesOverlap(position, item),
+      isCollidableItem(item) &&
+      rectOverlapsItem(
+        {
+          x: position.x,
+          y: position.y,
+          width: PLAYER_WIDTH,
+          height: PLAYER_HEIGHT,
+        },
+        item,
+      ),
     ),
   )) {
     return false;
   }
 
   return !occupiedPositions.some((occupied) =>
-    rectanglesOverlap(position, {
+    rectsIntersect(
+      {
+        x: position.x,
+        y: position.y,
+        width: PLAYER_WIDTH,
+        height: PLAYER_HEIGHT,
+      },
+      {
       x: occupied.x,
       y: occupied.y,
       width: PLAYER_WIDTH,
       height: PLAYER_HEIGHT,
-    }),
+      },
+    ),
   );
 }
 
@@ -129,18 +147,42 @@ export function findActorStart(
   return null;
 }
 
+/** Pick a random unoccupied floor tile, rather than the first available one. */
+export function findRandomActorStart(
+  document: MapDocument,
+  occupiedPositions: readonly PlayerPosition[] = [],
+): PlayerPosition | null {
+  const candidates: PlayerPosition[] = [];
+  for (let y = 0; y <= document.height - PLAYER_HEIGHT; y += 1) {
+    for (let x = 0; x <= document.width - PLAYER_WIDTH; x += 1) {
+      const position = { x, y };
+      if (canActorOccupy(document, position, occupiedPositions)) {
+        candidates.push(position);
+      }
+    }
+  }
+  if (!candidates.length) return null;
+  return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
 export function isCollidableItem(item: MapItem) {
   return COLLIDABLE_FURNITURE_ASSET_SET.has(item.assetPath);
 }
 
-function rectanglesOverlap(
+export function computeCameraPosition(
+  document: MapDocument,
   player: PlayerPosition,
-  item: Pick<MapItem, "x" | "y" | "width" | "height">,
+  viewWidth: number,
+  viewHeight: number,
 ) {
-  return (
-    player.x < item.x + item.width &&
-    player.x + PLAYER_WIDTH > item.x &&
-    player.y < item.y + item.height &&
-    player.y + PLAYER_HEIGHT > item.y
-  );
+  return {
+    x: Math.min(
+      Math.max(0, player.x - Math.floor(viewWidth / 2)),
+      Math.max(0, document.width - viewWidth),
+    ),
+    y: Math.min(
+      Math.max(0, player.y - Math.floor(viewHeight / 2)),
+      Math.max(0, document.height - viewHeight),
+    ),
+  };
 }

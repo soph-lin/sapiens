@@ -1,4 +1,6 @@
 export { FieldCompanion } from "./FieldCompanion";
+export { default as HomeFieldNotes } from "./HomeFieldNotes";
+export { default as VoyageTakeawayNote } from "./VoyageTakeawayNote";
 export {
   COCO_FOLLOWUP_LINES,
   COCO_GREETING_LINES,

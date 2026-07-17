@@ -15,15 +15,38 @@ function modelConfig() {
   } as Prisma.InputJsonValue;
 }
 
+function steeringInput(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error("steering must be non-empty text");
+  }
+  return value.trim();
+}
+
+function researcherTopic(value: unknown): string | undefined {
+  let output = value;
+  if (typeof output === "string") {
+    try { output = JSON.parse(output) as unknown; } catch { return undefined; }
+  }
+  if (!output || typeof output !== "object" || Array.isArray(output)) return undefined;
+  const topic = (output as Record<string, unknown>).topic;
+  return typeof topic === "string" && topic.trim() ? topic.trim() : undefined;
+}
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { steering?: unknown; storyConfig?: unknown };
+    const body = await request.json() as {
+      steering?: unknown;
+      storyConfig?: unknown;
+      progress?: unknown[];
+      usage?: unknown;
+    };
     const run = await prisma.storyGenRun.create({
       data: {
         slug: randomUUID().replaceAll("-", ""),
         status: "ongoing",
-        progress: [] as Prisma.InputJsonValue,
-        steering: body.steering === undefined ? undefined : body.steering as Prisma.InputJsonValue,
+        progress: (Array.isArray(body.progress) ? body.progress : []) as Prisma.InputJsonValue,
+        usage: body.usage === undefined ? undefined : body.usage as Prisma.InputJsonValue,
+        steering: body.steering === undefined ? undefined : steeringInput(body.steering),
         storyConfig: body.storyConfig === undefined ? undefined : body.storyConfig as Prisma.InputJsonValue,
         modelConfig: modelConfig(),
       },
@@ -46,14 +69,19 @@ export async function PATCH(request: Request) {
       outputs?: Record<string, unknown>;
     };
     if (!body.slug) throw new Error("run slug is required");
-    const outputFields = ["researcher", "director", "writer", "artist"] as const;
+    const outputFields = ["curator", "researcher", "director", "writer", "artist"] as const;
     const data: Prisma.StoryGenRunUpdateInput = {
       progress: body.progress === undefined ? undefined : body.progress as Prisma.InputJsonValue,
       usage: body.usage === undefined ? undefined : body.usage as Prisma.InputJsonValue,
       error: body.error === undefined ? undefined : body.error,
       status: body.status ?? (body.error ? "fail" : undefined),
-      finishedAt: body.error ? new Date() : undefined,
+      finishedAt:
+        body.status === "succeed" || body.status === "fail" || body.error
+          ? new Date()
+          : undefined,
     };
+    const topic = researcherTopic(body.outputs?.researcher);
+    if (topic) data.topic = topic;
     for (const agent of outputFields) {
       const output = body.outputs?.[agent];
       if (output !== undefined) data[`${agent}Output` as keyof Prisma.StoryGenRunUpdateInput] = { set: output as Prisma.InputJsonValue } as never;

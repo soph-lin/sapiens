@@ -308,7 +308,7 @@ export function validateStory(raw: unknown): Story {
   return story;
 }
 
-/** Accept a raw story or the Writer's { dialogue, embellish } payload. */
+/** Accept a raw story or the Writer's { dialogue } payload. */
 export function validateStoryPayload(raw: unknown): Story {
   if (isRecord(raw) && ("start" in raw || "nodes" in raw)) {
     return validateStory(raw);

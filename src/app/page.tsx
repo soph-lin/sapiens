@@ -1,4 +1,5 @@
 import { PixelWaveHero } from "./components/PixelWaveHero";
+import IndexStartCue from "./components/landing/IndexStartCue";
 
 export default function Home() {
   return (
@@ -9,6 +10,7 @@ export default function Home() {
           sapiens
         </h1>
       </main>
+      <IndexStartCue />
     </div>
   );
 }

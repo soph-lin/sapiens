@@ -1,12 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import toast, { Toaster } from "react-hot-toast";
 import { normalizeMapDocument, type MapDocument } from "@/lib/game/map";
-import { useNpcDialogue } from "@/lib/game/useNpcDialogue";
+import {
+  applyItemInteraction as applyGameItemInteraction,
+  findInteractableItem,
+  type ItemInteractionTarget,
+} from "@/lib/game/interactions";
+import { useNpcDialogue } from "@/lib/game/npc/useNpcDialogue";
+import { useItemDialogue } from "@/lib/game/items/useItemDialogue";
 import {
   canActorOccupy,
-  findActorStart,
+  computeCameraPosition,
   findPlayerStart,
+  findRandomActorStart,
   movePlayer,
   type PlayerDirection,
   type PlayerPosition,
@@ -14,18 +22,28 @@ import {
 import {
   PLAYER_SPEED,
   STAND_TIME,
-  VIEW_HEIGHT,
-  VIEW_WIDTH,
 } from "@/lib/game/config";
-import MapRenderer from "./MapRenderer";
+import LoadingScreen from "@/app/components/loading/LoadingScreen";
+import ProgressLogPanel from "@/app/components/progress/ProgressLogPanel";
+import type { ProgressLogEntry } from "@/app/components/progress/ProgressLog";
+import { HomeFieldNotes } from "@/app/components/fieldnotes";
+import MapRenderer, { type ViewTiles } from "./MapRenderer";
+import {
+  MAP_LOAD_ERROR_LABELS,
+  NPC_ERROR_LABELS,
+  pickRandomLabel,
+} from "@/lib/game/home-errors";
 
 const MAP_NAME = "myroom";
 const DIRECTIONS: PlayerDirection[] = ["up", "down", "left", "right"];
+const DEFAULT_VIEW_TILES: ViewTiles = { width: 1, height: 1 };
 
 type StarCharacter = {
+  ageRange: string | null;
   characterId: string;
   id: string;
   name: string;
+  portraitUrl: string | null;
   spriteFrames: Record<string, string>;
   spriteUrl: string | null;
 };
@@ -56,21 +74,32 @@ function parseStarCharacters(value: unknown): StarCharacter[] {
     const star = runValue.starCharacter;
     if (typeof star.name !== "string" || !star.name.trim()) return [];
     if (typeof star.characterId !== "string" || !star.characterId) return [];
-    const spriteUrl = typeof star.spriteUrl === "string" && star.spriteUrl
-      ? star.spriteUrl
-      : null;
+    const portraitUrl =
+      typeof star.portraitUrl === "string" && star.portraitUrl
+        ? star.portraitUrl
+        : null;
+    const spriteUrl =
+      typeof star.spriteUrl === "string" && star.spriteUrl
+        ? star.spriteUrl
+        : null;
     const spriteFrames = isRecord(star.spriteFrames)
       ? Object.fromEntries(
           Object.entries(star.spriteFrames).filter(
             (entry): entry is [string, string] => typeof entry[1] === "string",
           ),
-      )
+        )
       : {};
+    const ageRange =
+      typeof star.ageRange === "string" && star.ageRange.trim()
+        ? star.ageRange.trim()
+        : null;
     return [
       {
+        ageRange,
         characterId: star.characterId,
         id: star.characterId,
         name: star.name,
+        portraitUrl,
         spriteFrames,
         spriteUrl,
       },
@@ -85,7 +114,7 @@ function createNpcStates(
 ): NpcState[] {
   const occupied = player ? [player] : [];
   return stars.flatMap((star) => {
-    const position = findActorStart(document, occupied);
+    const position = findRandomActorStart(document, occupied);
     if (!position) return [];
     occupied.push(position);
     return [
@@ -214,16 +243,19 @@ function interactableNpc(
 }
 
 export default function GameController() {
+  const [fieldNotesRefreshKey, setFieldNotesRefreshKey] = useState(0);
   const [document, setDocument] = useState<MapDocument | null>(null);
   const [mapStatus, setMapStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
   const [mapError, setMapError] = useState<string | null>(null);
-  const [stars, setStars] = useState<StarCharacter[]>([]);
   const [starError, setStarError] = useState<string | null>(null);
   const [player, setPlayer] = useState<PlayerPosition | null>(null);
   const [npcs, setNpcs] = useState<NpcState[]>([]);
   const [direction, setDirection] = useState<PlayerDirection>("down");
+  const [viewTiles, setViewTiles] = useState<ViewTiles>(DEFAULT_VIEW_TILES);
+  const [rendererReady, setRendererReady] = useState(false);
+  const [actorProgress, setActorProgress] = useState<ProgressLogEntry[]>([]);
   const documentRef = useRef<MapDocument | null>(null);
   const playerRef = useRef<PlayerPosition | null>(null);
   const npcsRef = useRef<NpcState[]>([]);
@@ -233,7 +265,62 @@ export default function GameController() {
     dialogueOpenRef,
     closeDialogue,
     openNpcDialogue,
-  } = useNpcDialogue();
+  } = useNpcDialogue({
+    onFieldNoteAdded: () => setFieldNotesRefreshKey((current) => current + 1),
+    onProgress: (entries) => {
+      if (!entries?.length) return;
+      setActorProgress((current) =>
+        [
+          ...current,
+          ...entries.map((entry) => ({
+            agent: entry.agent,
+            phase: entry.phase,
+            message: entry.message,
+            details: {
+              ...(entry.details ?? {}),
+              ...(entry.tool ? { tool: entry.tool } : {}),
+            },
+          })),
+        ].slice(-100),
+      );
+    },
+  });
+
+  const applyItemInteraction = useCallback(
+    (target: ItemInteractionTarget, optionId: string) => {
+      const current = documentRef.current;
+      if (!current) return undefined;
+      const outcome = applyGameItemInteraction(current, target, optionId);
+      if (!outcome) return undefined;
+
+      const updates = new Map<string, string>();
+      for (const effect of outcome.effects) {
+        updates.set(`${effect.layerId}:${effect.itemId}`, effect.assetPath);
+      }
+      if (updates.size === 0) return outcome.response;
+
+      const next: MapDocument = {
+        ...current,
+        layers: current.layers.map((layer) => ({
+          ...layer,
+          items: layer.items.map((item) => {
+            const assetPath = updates.get(`${layer.id}:${item.id}`);
+            return assetPath ? { ...item, assetPath } : item;
+          }),
+        })),
+      };
+      documentRef.current = next;
+      setDocument(next);
+      return outcome.response;
+    },
+    [],
+  );
+  const {
+    closeDialogue: closeItemDialogue,
+    dialogue: itemDialogueView,
+    dialogueOpenRef: itemDialogueOpenRef,
+    openItemDialogue,
+  } = useItemDialogue(documentRef, applyItemInteraction);
 
   useEffect(() => {
     let active = true;
@@ -274,12 +361,13 @@ export default function GameController() {
         setMapStatus("ready");
       } catch (error) {
         if (!active) return;
-        setMapStatus("error");
-        setMapError(
+        const raw =
           error instanceof Error
             ? error.message
-            : `Could not load map “${MAP_NAME}”.`,
-        );
+            : `Could not load map “${MAP_NAME}”.`;
+        console.error(raw);
+        setMapStatus("error");
+        setMapError(pickRandomLabel(MAP_LOAD_ERROR_LABELS));
       }
     }
     void loadMap();
@@ -292,7 +380,7 @@ export default function GameController() {
     let active = true;
     async function loadStars() {
       try {
-        const response = await fetch("/api/steer/voyages");
+        const response = await fetch("/api/voyages");
         const result = (await response.json()) as unknown;
         if (!response.ok)
           throw new Error(
@@ -303,7 +391,6 @@ export default function GameController() {
         const next = parseStarCharacters(result);
         if (!active) return;
         starsRef.current = next;
-        setStars(next);
         if (documentRef.current) {
           const nextNpcs = createNpcStates(
             documentRef.current,
@@ -313,13 +400,22 @@ export default function GameController() {
           npcsRef.current = nextNpcs;
           setNpcs(nextNpcs);
         }
+        // Successful response with no guests still reads as “NPCs not here.”
+        if (next.length === 0) {
+          setStarError(pickRandomLabel(NPC_ERROR_LABELS));
+        } else {
+          setStarError(null);
+        }
       } catch (error) {
         if (!active) return;
-        setStarError(
+        const raw =
           error instanceof Error
             ? error.message
-            : "Could not load star characters.",
-        );
+            : "Could not load star characters.";
+        console.error(raw);
+        // Any failure that leaves guests missing — including API/DB errors
+        // like unknown Prisma fields — uses the NPC labels.
+        setStarError(pickRandomLabel(NPC_ERROR_LABELS));
       }
     }
     void loadStars();
@@ -330,21 +426,43 @@ export default function GameController() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (dialogueOpenRef.current) {
+      const target = event.target;
+      const typing =
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName));
+
+      if (dialogueOpenRef.current || itemDialogueOpenRef.current) {
         if (event.key === "Escape") {
+          // Editable free-text handles Escape by blurring first; don't close yet.
+          if (typing) return;
           event.preventDefault();
-          closeDialogue();
+          if (itemDialogueOpenRef.current) closeItemDialogue();
+          if (dialogueOpenRef.current) closeDialogue();
         }
         return;
       }
+      // Field-note share / other overlays: don't steal typing keys (wasd, z, …).
+      if (typing) return;
       if (event.key.toLowerCase() === "z") {
         event.preventDefault();
-        const target = interactableNpc(
+        const itemTarget = documentRef.current
+          ? findInteractableItem(
+              documentRef.current,
+              playerRef.current,
+              direction,
+            )
+          : undefined;
+        if (itemTarget) {
+          openItemDialogue(itemTarget);
+          return;
+        }
+        const npcTarget = interactableNpc(
           playerRef.current,
           direction,
           npcsRef.current,
         );
-        if (target) openNpcDialogue(target);
+        if (npcTarget) openNpcDialogue(npcTarget);
         return;
       }
 
@@ -378,7 +496,15 @@ export default function GameController() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [closeDialogue, direction, dialogueOpenRef, openNpcDialogue]);
+  }, [
+    closeDialogue,
+    closeItemDialogue,
+    direction,
+    dialogueOpenRef,
+    itemDialogueOpenRef,
+    openItemDialogue,
+    openNpcDialogue,
+  ]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -439,92 +565,86 @@ export default function GameController() {
     return () => window.clearInterval(interval);
   }, [dialogueOpenRef]);
 
-  const cameraX =
-    document && player
-      ? Math.min(
-          Math.max(0, player.x - Math.floor(VIEW_WIDTH / 2)),
-          Math.max(0, document.width - VIEW_WIDTH),
-        )
-      : 0;
-  const cameraY =
-    document && player
-      ? Math.min(
-          Math.max(0, player.y - Math.floor(VIEW_HEIGHT / 2)),
-          Math.max(0, document.height - VIEW_HEIGHT),
-        )
-      : 0;
+  const camera = useMemo(() => {
+    if (!document || !player) return { x: 0, y: 0 };
+    return computeCameraPosition(
+      document,
+      player,
+      viewTiles.width,
+      viewTiles.height,
+    );
+  }, [document, player, viewTiles.height, viewTiles.width]);
+  const handleViewTilesChange = useCallback((tiles: ViewTiles) => {
+    setViewTiles(tiles);
+  }, []);
+  const handleRendererReadyChange = useCallback((ready: boolean) => {
+    setRendererReady(ready);
+  }, []);
+
   const targetNpc = useMemo(
     () => interactableNpc(player, direction, npcs),
     [direction, npcs, player],
   );
+  const targetItem = useMemo(
+    () =>
+      document
+        ? findInteractableItem(document, player, direction)
+        : undefined,
+    [direction, document, player],
+  );
+
+  useEffect(() => {
+    if (mapStatus !== "error") return;
+    toast.error(mapError ?? MAP_LOAD_ERROR_LABELS[0], {
+      id: "home-2d-map-load-error",
+    });
+  }, [mapError, mapStatus]);
+
+  useEffect(() => {
+    if (!starError) return;
+    toast.error(starError, {
+      id: "home-2d-npc-load-error",
+    });
+  }, [starError]);
+
+  if (mapStatus === "loading") {
+    return (
+      <>
+        <Toaster position="top-right" />
+        <LoadingScreen />
+      </>
+    );
+  }
+
   return (
-    <main className="min-h-dvh bg-[#0b0c0e] p-5 text-[#f5ead9] sm:p-8">
-      <div className="mx-auto max-w-[1500px]">
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="font-mono text-xs uppercase tracking-[0.25em] text-amber-200/60">
-              Sapiens / home-2d
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold">My room</h1>
-          </div>
-          <p className="font-mono text-xs uppercase tracking-[0.15em] text-[#9ea8aa]">
-            Arrow keys or WASD to move · Z to talk
-          </p>
-        </div>
-
-        {mapStatus === "loading" ? (
-          <StatusPanel message={`Loading map “${MAP_NAME}”…`} />
-        ) : mapStatus === "error" ? (
-          <StatusPanel
-            message={mapError ?? `Could not load map “${MAP_NAME}”.`}
-            isError
+    <main className="map-home-page flex min-h-0 flex-col overflow-hidden">
+      <Toaster position="top-right" />
+      {mapStatus === "ready" && document ? (
+        <>
+          <MapRenderer
+            cameraX={camera.x}
+            cameraY={camera.y}
+            document={document}
+            dialogue={npcDialogueView ?? itemDialogueView}
+            fieldNotes={<HomeFieldNotes refreshKey={fieldNotesRefreshKey} />}
+            npcs={npcs.map((npc) => ({
+              ...npc,
+              isTarget: !targetItem && npc.id === targetNpc?.id,
+            }))}
+            onReadyChange={handleRendererReadyChange}
+            onViewTilesChange={handleViewTilesChange}
+            player={player}
+            playerDirection={direction}
+            targetItem={targetItem}
           />
-        ) : document ? (
-          <div className="mx-auto w-fit max-w-full overflow-hidden rounded-3xl border border-white/10 bg-[#070809] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.3)]">
-            <MapRenderer
-              cameraX={cameraX}
-              cameraY={cameraY}
-              document={document}
-              dialogue={npcDialogueView}
-              npcs={npcs.map((npc) => ({
-                ...npc,
-                isTarget: npc.id === targetNpc?.id,
-              }))}
-              player={player}
-              playerDirection={direction}
-            />
-          </div>
-        ) : null}
-      </div>
-
-      {mapStatus === "ready" && starError ? (
-        <StatusPanel message={starError} isError />
-      ) : null}
-      {mapStatus === "ready" && !starError && !stars.length ? (
-        <StatusPanel message="No star characters are available yet." />
+          {!rendererReady ? (
+            <div className="fixed inset-0 z-200" data-map-overlay>
+              <LoadingScreen />
+            </div>
+          ) : null}
+          <ProgressLogPanel entries={actorProgress} label="Actor progress" />
+        </>
       ) : null}
     </main>
-  );
-}
-
-function StatusPanel({
-  isError = false,
-  message,
-}: {
-  isError?: boolean;
-  message: string;
-}) {
-  return (
-    <div
-      aria-live={isError ? "assertive" : "polite"}
-      className={`mx-auto w-fit rounded-2xl border px-5 py-4 font-mono text-xs uppercase tracking-[0.12em] ${
-        isError
-          ? "border-red-300/30 bg-red-950/95 text-red-100"
-          : "border-white/10 bg-[#14171b] text-[#c7ccca]"
-      }`}
-      role={isError ? "alert" : undefined}
-    >
-      {message}
-    </div>
   );
 }

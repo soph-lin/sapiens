@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   DialogueEngine,
   type DialogueHistoryEntry,
+  type EngineSnapshot,
   type Presentable,
   type State,
 } from "@/lib/dialogue";
@@ -52,6 +53,15 @@ function toastStateDiff(before: State, after: State): void {
     toast(`${humanizeFlag(key)} ${next ? "gained" : "lost"}`);
   }
 }
+
+/** A past dialogue beat captured so the player can step back into it. */
+type PastEntry = {
+  engineSnapshot: EngineSnapshot;
+  view: Presentable;
+  state: State;
+  hasStats: boolean;
+  dialogueHistory: DialogueHistoryEntry[];
+};
 
 function bootEngine(story: unknown) {
   const engine = new DialogueEngine(story);
@@ -113,6 +123,7 @@ export function useDialogueSession({
       state: boot.state,
       hasStats: boot.hasStats,
       dialogueHistory: boot.dialogueHistory,
+      past: [] as PastEntry[],
       revealKey: 0,
     };
   });
@@ -127,11 +138,13 @@ export function useDialogueSession({
       state: boot.state,
       hasStats: boot.hasStats,
       dialogueHistory: boot.dialogueHistory,
+      past: [],
       revealKey: 0,
     });
   }
 
-  const { engine, view, state, hasStats, dialogueHistory, revealKey } = session;
+  const { engine, view, state, hasStats, dialogueHistory, past, revealKey } =
+    session;
   const typingGateRef: TypingGateRef = useRef({
     done: true,
     skip: () => {},
@@ -146,11 +159,25 @@ export function useDialogueSession({
     });
   }, [scenarioId, view, state, revealKey, engine]);
 
-  const publish = (nextEngine: DialogueEngine, selectedChoice?: string) => {
+  const publish = (
+    nextEngine: DialogueEngine,
+    prevSnapshot: EngineSnapshot,
+    selectedChoice?: string,
+  ) => {
     const nextView = nextEngine.present();
     const nextState = nextEngine.getState();
     setSession((prev) => ({
       ...prev,
+      past: [
+        ...prev.past,
+        {
+          engineSnapshot: prevSnapshot,
+          view: prev.view,
+          state: prev.state,
+          hasStats: prev.hasStats,
+          dialogueHistory: prev.dialogueHistory,
+        },
+      ],
       engine: nextEngine,
       view: nextView,
       state: nextState,
@@ -171,14 +198,16 @@ export function useDialogueSession({
     if (engine.isEnded()) return;
     const current = engine.present();
     if (current.kind !== "text" || !current.canAdvance) return;
+    const snapshot = engine.getSnapshot();
     const before = engine.getState();
     engine.advance();
     toastStateDiff(before, engine.getState());
-    publish(engine);
+    publish(engine, snapshot);
   };
 
   const choose = (index: number) => {
     if (engine.isEnded()) return;
+    const snapshot = engine.getSnapshot();
     const before = engine.getState();
     const current = engine.present();
     const selectedChoice = current.kind === "choice"
@@ -186,7 +215,24 @@ export function useDialogueSession({
       : undefined;
     engine.choose(index);
     toastStateDiff(before, engine.getState());
-    publish(engine, selectedChoice);
+    publish(engine, snapshot, selectedChoice);
+  };
+
+  const canGoBack = past.length > 0;
+
+  const back = () => {
+    if (session.past.length === 0) return;
+    const previous = session.past[session.past.length - 1];
+    engine.restore(previous.engineSnapshot);
+    setSession((prev) => ({
+      ...prev,
+      past: prev.past.slice(0, -1),
+      view: previous.view,
+      state: previous.state,
+      hasStats: previous.hasStats,
+      dialogueHistory: previous.dialogueHistory,
+      revealKey: prev.revealKey + 1,
+    }));
   };
 
   const restart = () => {
@@ -198,33 +244,10 @@ export function useDialogueSession({
       state: boot.state,
       hasStats: boot.hasStats,
       dialogueHistory: boot.dialogueHistory,
+      past: [],
       revealKey: prev.revealKey + 1,
     }));
   };
-
-  const handleContinueIntent = useEffectEvent(() => {
-    if (!typingGateRef.current.done) {
-      typingGateRef.current.skip();
-      return;
-    }
-    advance();
-  });
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== " " && event.key !== "Enter") return;
-      if (document.body.dataset.cocoLayerOpen === "true") return;
-      const el = event.target as HTMLElement | null;
-      if (!el) return;
-      if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return;
-      if (el.closest('[role="option"]')) return;
-      event.preventDefault();
-      event.stopPropagation();
-      handleContinueIntent();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
 
   return {
     view,
@@ -234,6 +257,8 @@ export function useDialogueSession({
     typingGateRef,
     advance,
     choose,
+    back,
+    canGoBack,
     dialogueHistory,
     restart,
   };

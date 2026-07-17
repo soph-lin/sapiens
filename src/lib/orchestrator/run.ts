@@ -1,10 +1,11 @@
-import { artist } from "./artist";
-import { createAgentContext } from "./agent-context";
-import { director, type AdventurePlan } from "./director";
-import { researcher } from "./researcher";
-import { writer } from "./writer";
+import { artist } from "./agent/artist";
+import { createAgentContext } from "./agent/agent-context";
+import { director, type AdventurePlan } from "./agent/director";
+import { researcher } from "./agent/researcher";
+import { writer } from "./agent/writer";
 import type { StoryLimits } from "./config";
 import type { RunUsage } from "./types";
+import type { FlourishConfig } from "./agent/flourish";
 
 export type AdventureRunInput = {
   topic: string;
@@ -12,6 +13,8 @@ export type AdventureRunInput = {
   instructions?: string;
   synopsis?: string;
   limits?: StoryLimits;
+  flourish?: Partial<FlourishConfig>;
+  furtherReading?: boolean;
 };
 
 export type AdventureRunResult = {
@@ -29,8 +32,18 @@ export async function runAdventurePipeline(
   const context = createAgentContext({
     limits: input.limits,
     directorSteering: input.synopsis ?? input.instructions,
+    flourish: {
+      ...input.flourish,
+      ...(input.furtherReading === undefined ? {} : { furtherReading: input.furtherReading }),
+    },
   });
-  const researchOutput = await researcher(input.topic, context);
+  const researchOutput = await researcher(
+    {
+      historicalEvent: input.topic,
+      plotDirection: input.synopsis ?? input.instructions,
+    },
+    context,
+  );
   const directorOutput = await director(
     researchOutput as Record<string, unknown>,
     context,

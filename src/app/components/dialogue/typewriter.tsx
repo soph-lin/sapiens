@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type MutableRefObject,
 } from "react";
 import type { DialogueTheme } from "./theme";
@@ -124,5 +125,39 @@ export function TypeCaret({
       }`}
       aria-hidden
     />
+  );
+}
+
+/**
+ * Typewriter copy that sizes to the final text height immediately, so the
+ * box does not grow line-by-line as characters appear.
+ */
+export function TypewriterLine({
+  text,
+  displayed,
+  done,
+  className,
+  style,
+  theme,
+  caretTone = "dark",
+}: {
+  text: string;
+  displayed: string;
+  done: boolean;
+  className: string;
+  style?: CSSProperties;
+  theme: DialogueTheme;
+  caretTone?: "dark" | "muted";
+}) {
+  return (
+    <p className={`relative ${className}`} style={style} aria-label={text}>
+      <span aria-hidden className="invisible block">
+        {text}
+      </span>
+      <span aria-hidden className="absolute inset-0">
+        {displayed}
+        {!done ? <TypeCaret theme={theme} tone={caretTone} /> : null}
+      </span>
+    </p>
   );
 }

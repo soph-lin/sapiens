@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { artist, type ArtistPlan } from "@/lib/orchestrator/artist";
-import { director } from "@/lib/orchestrator/director";
-import { researcher } from "@/lib/orchestrator/researcher";
-import { writer } from "@/lib/orchestrator/writer";
-import { UsageCollector } from "@/lib/orchestrator/telemetry";
+import { artist, type ArtistPlan } from "@/lib/orchestrator/agent/artist";
+import { curator } from "@/lib/orchestrator/agent/curator";
+import { parseCuratorInput } from "@/lib/orchestrator/agent/curator-shared";
+import { director } from "@/lib/orchestrator/agent/director";
+import { researcher } from "@/lib/orchestrator/agent/researcher";
+import { writer } from "@/lib/orchestrator/agent/writer";
+import type { CharacterAssetStore } from "@/lib/orchestrator/agent/agent-context";
+import { UsageCollector } from "@/lib/orchestrator/tools/telemetry";
 import {
   DEFAULT_STORY_LIMITS,
   ORCHESTRATOR_CONFIG,
@@ -15,6 +18,9 @@ import type {
   AgentProgressEvent,
   GeneratedAssetEvent,
 } from "@/lib/orchestrator/types";
+import { isAgeRange, type AgeRange } from "@/lib/orchestrator/agent/portrait-age";
+import { normalizeFlourishConfig, sourcePolicyFromClassroom, type FlourishConfig } from "@/lib/orchestrator/agent/flourish";
+import { getDemoUserFromRequest } from "@/lib/demo-auth";
 
 export const runtime = "nodejs";
 
@@ -53,7 +59,16 @@ function artistPlanInput(value: unknown): ArtistPlan {
     if (typeof value.name !== "string" || typeof value.desc !== "string") {
       throw new Error(`director input.characters[${index}] requires name and desc`);
     }
-    return { name: value.name, desc: value.desc };
+    return {
+      name: value.name,
+      desc: value.desc,
+      ageRange: (() => {
+        if (!isAgeRange(value.ageRange)) {
+          throw new Error(`director input.characters[${index}].ageRange must be one of the supported age ranges`);
+        }
+        return value.ageRange as AgeRange;
+      })(),
+    };
   });
   if (!object.collectible || typeof object.collectible !== "object" || Array.isArray(object.collectible)) {
     throw new Error("director input.collectible must be an object");
@@ -79,6 +94,13 @@ function artistPlanInput(value: unknown): ArtistPlan {
         ? {
             name: (starCharacter as Record<string, unknown>).name as string,
             desc: (starCharacter as Record<string, unknown>).desc as string,
+            ageRange: (() => {
+              const range = (starCharacter as Record<string, unknown>).ageRange;
+              if (!isAgeRange(range)) {
+                throw new Error("artist input.starCharacter.ageRange must be one of the supported age ranges");
+              }
+              return range as AgeRange;
+            })(),
           }
         : null,
     collectible: { name: collectible.name, desc: collectible.desc },
@@ -93,7 +115,9 @@ type SteerBody = {
   agent?: AgentName;
   input?: string;
   limits?: StoryLimits & { maxTries?: number; maxOutputTokens?: number };
-  synopsis?: string;
+  plotDirection?: string;
+  flourish?: unknown;
+  furtherReading?: unknown;
 };
 
 function parseDirectorLimits(value: unknown): {
@@ -142,13 +166,12 @@ function parseDirectorLimits(value: unknown): {
 }
 
 function validateBody(body: SteerBody) {
-  if (!body.agent || !["researcher", "director", "writer", "artist"].includes(body.agent)) {
-    throw new Error("agent must be researcher, director, writer, or artist");
+  if (!body.agent || !["curator", "researcher", "director", "writer", "artist"].includes(body.agent)) {
+    throw new Error("agent must be curator, researcher, director, writer, or artist");
   }
-  if (body.synopsis !== undefined && typeof body.synopsis !== "string") {
-    throw new Error("synopsis must be text");
-  }
-  if (body.agent === "researcher") {
+  if (body.agent === "curator") {
+    parseCuratorInput(body.input);
+  } else if (body.agent === "researcher") {
     if (typeof body.input !== "string") throw new Error("historical event is required");
   } else if (body.agent === "director") {
     objectWithKeys(body.input, "researcher input", ["topic", "articleUrl"]);
@@ -163,15 +186,44 @@ function validateBody(body: SteerBody) {
   } else if (body.agent === "artist") {
     artistPlanInput(body.input);
   }
+  if (body.plotDirection !== undefined &&
+      (typeof body.plotDirection !== "string" || !body.plotDirection.trim())) {
+    throw new Error("plotDirection must be non-empty text when supplied");
+  }
 }
 
 export async function POST(request: Request) {
   let body: SteerBody;
+  let flourish: FlourishConfig;
   let directorLimits: StoryLimits = DEFAULT_STORY_LIMITS;
   let maxTries = ORCHESTRATOR_CONFIG.maxTries;
   let maxOutputTokens = ORCHESTRATOR_CONFIG.maxOutputTokens;
   try {
     body = (await request.json()) as SteerBody;
+    flourish = normalizeFlourishConfig(body.flourish ?? (body.furtherReading === undefined ? undefined : { furtherReading: body.furtherReading }));
+    // Classroom source policy is authoritative for every signed-in classroom user
+    // (students included). Prefer DB domains; if the classroom row is empty, keep
+    // any domains the client already sent.
+    const user = await getDemoUserFromRequest(request);
+    if (user) {
+      const classroom = await prisma.classroom.findFirst({
+        where:
+          user.role === "teacher"
+            ? { teacherId: user.id }
+            : { memberships: { some: { userId: user.id } } },
+        select: { sourceMode: true, approvedDomains: true },
+      });
+      if (classroom) {
+        const fromClassroom = sourcePolicyFromClassroom(classroom);
+        flourish = normalizeFlourishConfig({
+          ...flourish,
+          approvedDomains:
+            fromClassroom.approvedDomains.length > 0
+              ? fromClassroom.approvedDomains
+              : flourish.approvedDomains,
+        });
+      }
+    }
     const parsedLimits = parseDirectorLimits(body.limits);
     directorLimits = parsedLimits.limits;
     maxTries = parsedLimits.maxTries;
@@ -197,39 +249,48 @@ export async function POST(request: Request) {
           phase: "agent",
           message: "Starting agent…",
         });
+        const characterAssetStore: CharacterAssetStore = {
+          findByNamesAndAgeRanges: async (requests) => {
+            const characters = await prisma.character.findMany({
+              where: {
+                OR: requests.map(({ name, ageRange }) => ({
+                  name: { equals: name, mode: "insensitive" as const },
+                  ageRange: ageRange.toUpperCase().replaceAll(" ", "_") as never,
+                })),
+              },
+              include: { asset: true },
+              orderBy: { id: "asc" },
+            });
+            return characters.map(({ asset }) => asset);
+          },
+          findSpriteByNames: async (names: string[]) => {
+            const characters = await prisma.character.findMany({
+              where: { name: { in: names }, spriteAssetId: { not: null } },
+              include: { spriteAsset: true },
+              orderBy: { id: "asc" },
+            });
+            return characters.flatMap(({ spriteAsset }) =>
+              spriteAsset ? [spriteAsset] : [],
+            );
+          },
+        };
         const options = {
           usage,
           limits: directorLimits,
           maxTries,
           maxOutputTokens,
+          directorSteering: body.plotDirection,
           signal: request.signal,
-          directorSteering: body.synopsis,
           onProgress: (event: AgentProgressEvent) => emit("progress", event),
           onAsset: (event: GeneratedAssetEvent) => emit("asset", event),
-          characterAssetStore: {
-            findByNames: async (names: string[]) => {
-              const characters = await prisma.character.findMany({
-                where: { name: { in: names } },
-                include: { asset: true },
-                orderBy: { id: "asc" },
-              });
-              return characters.map(({ asset }) => asset);
-            },
-            findSpriteByNames: async (names: string[]) => {
-              const characters = await prisma.character.findMany({
-                where: { name: { in: names }, spriteAssetId: { not: null } },
-                include: { spriteAsset: true },
-                orderBy: { id: "asc" },
-              });
-              return characters.flatMap(({ spriteAsset }) =>
-                spriteAsset ? [spriteAsset] : [],
-              );
-            },
-          },
+          characterAssetStore,
+          flourish,
         };
         let output: unknown;
 
-        if (body.agent === "researcher") {
+        if (body.agent === "curator") {
+          output = await curator(parseCuratorInput(body.input), options);
+        } else if (body.agent === "researcher") {
           output = await researcher(body.input as string, options);
         } else if (body.agent === "director") {
           output = await director(

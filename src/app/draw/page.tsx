@@ -29,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { SparklingStars } from "@/app/components/effects";
 import {
   applyWoodBorder,
   buildAtlasGrid,
@@ -50,6 +51,17 @@ import {
   type MapRegion,
   type TileRole,
 } from "@/lib/game/map";
+import {
+  getShopDisplayItem,
+  getShopItemByAssetPath,
+  isShopSmallItem,
+  isSurfaceFurniture,
+  rotateShopItemAssetPath,
+} from "@/lib/game/items/shop";
+import {
+  collapseAssetEntries,
+  rotateAssetPathAmong,
+} from "@/lib/game/items/asset-variants";
 
 const STORAGE_KEY = "sapiens.draw.map.v1";
 const PUBLISHED_MAP_KEY = "sapiens.draw.published-map.v1";
@@ -63,8 +75,18 @@ type PreviewCell = { point: Point; label?: number };
 type RectangleSelection = { region: MapRegion; role: TileRole };
 type RectangleSource = "tile" | "region";
 type PaletteTab = "tile" | "items";
-type AssetEntry = { folder: string; file: string; assetPath: string; name: string };
-type SavedMapSummary = { id: string; name: string; createdAt: string; updatedAt: string };
+type AssetEntry = {
+  folder: string;
+  file: string;
+  assetPath: string;
+  name: string;
+};
+type SavedMapSummary = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
 type PublishedMapState = { id: string; name: string };
 type Selection =
   | { type: "item"; layerId: string; itemId: string }
@@ -75,9 +97,25 @@ type HistoryState = { past: MapDocument[]; future: MapDocument[] };
 
 const MAX_HISTORY = 60;
 
-const RECTANGLE_SELECTIONS: Array<
-  RectangleSelection & { label: string }
-> = [
+function collapsePaletteAssetEntries(entries: AssetEntry[]): AssetEntry[] {
+  // Shop-aware names first, then general slug collapse for stairs/doors/etc.
+  const withShopNames = entries.map((entry) => {
+    const shopItem = getShopItemByAssetPath(entry.assetPath);
+    if (!shopItem) return entry;
+    const displayItem = getShopDisplayItem(shopItem);
+    const parts = displayItem.assetPath.split("/");
+    return {
+      ...entry,
+      assetPath: displayItem.assetPath,
+      file: parts[parts.length - 1] ?? entry.file,
+      folder: parts[parts.length - 2] ?? entry.folder,
+      name: displayItem.name,
+    };
+  });
+  return collapseAssetEntries(withShopNames);
+}
+
+const RECTANGLE_SELECTIONS: Array<RectangleSelection & { label: string }> = [
   { label: "1 wall", region: 1, role: "wall" },
   { label: "2 wall", region: 2, role: "wall" },
   { label: "3 wall", region: 3, role: "wall" },
@@ -114,7 +152,9 @@ export default function DrawPage() {
   const [assetFolder, setAssetFolder] = useState("all");
   const [assetSearch, setAssetSearch] = useState("");
   const [selectedAsset, setSelectedAsset] = useState<AssetEntry | null>(null);
-  const [assetDimensions, setAssetDimensions] = useState<Record<string, { width: number; height: number }>>({});
+  const [assetDimensions, setAssetDimensions] = useState<
+    Record<string, { width: number; height: number }>
+  >({});
   const [selection, setSelection] = useState<Selection>(null);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [rectangleSource, setRectangleSource] =
@@ -147,6 +187,9 @@ export default function DrawPage() {
   const historyRef = useRef<HistoryState>({ past: [], future: [] });
   const gestureStartRef = useRef<MapDocument | null>(null);
   const moveSelectionRef = useRef<(key: string) => void>(() => undefined);
+  const rotateSelectionRef = useRef<(direction: -1 | 1) => void>(
+    () => undefined,
+  );
   const mapFileInputRef = useRef<HTMLInputElement>(null);
 
   const commitDocument = useCallback((updater: DocumentUpdater) => {
@@ -228,27 +271,33 @@ export default function DrawPage() {
   }, [finishGesture]);
 
   const clearMap = useCallback(() => {
-    commitDocument((current) =>
-      ({
-        ...current,
-        layers: current.layers.map((layer) =>
-          createEmptyMapLayer(layer.id, current.width, current.height),
-        ),
-      }),
-    );
+    commitDocument((current) => ({
+      ...current,
+      layers: current.layers.map((layer) =>
+        createEmptyMapLayer(layer.id, current.width, current.height),
+      ),
+    }));
     setPreview([]);
   }, [commitDocument]);
 
   function downloadMap() {
-    const payload = JSON.stringify({
-      width: document.width,
-      height: document.height,
-      layers: document.layers,
-    }, null, 2);
+    const payload = JSON.stringify(
+      {
+        width: document.width,
+        height: document.height,
+        layers: document.layers,
+      },
+      null,
+      2,
+    );
     const blob = new Blob([payload], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = window.document.createElement("a");
-    const safeName = mapName.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "map";
+    const safeName =
+      mapName
+        .trim()
+        .replace(/[^a-z0-9]+/gi, "-")
+        .replace(/^-|-$/g, "") || "map";
     anchor.href = url;
     anchor.download = `${safeName}.json`;
     anchor.click();
@@ -313,7 +362,9 @@ export default function DrawPage() {
     setRestorePanelState("loading");
     setRestorePanelMessage("");
     try {
-      const response = await fetch(`/api/maps/${encodeURIComponent(restoreMapId)}`);
+      const response = await fetch(
+        `/api/maps/${encodeURIComponent(restoreMapId)}`,
+      );
       const result = (await response.json()) as {
         error?: string;
         data?: unknown;
@@ -324,7 +375,8 @@ export default function DrawPage() {
         throw new Error(result.error ?? "Could not restore saved map.");
       }
       restoreDocument(normalizeMapDocument(result.data), result.name);
-      if (result.id && result.name) rememberPublishedMap(result.id, result.name);
+      if (result.id && result.name)
+        rememberPublishedMap(result.id, result.name);
       setIsRestorePanelOpen(false);
       setUploadState("success");
       setUploadMessage("Map restored");
@@ -336,7 +388,9 @@ export default function DrawPage() {
     }
   }
 
-  async function restoreDownloadedMap(event: React.ChangeEvent<HTMLInputElement>) {
+  async function restoreDownloadedMap(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
@@ -370,27 +424,32 @@ export default function DrawPage() {
           ? `/api/maps/${encodeURIComponent(publishedMapId)}`
           : "/api/maps",
         {
-        method: publishedMapId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          data: {
-            width: document.width,
-            height: document.height,
-            layers: document.layers,
-          },
-        }),
+          method: publishedMapId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name,
+            data: {
+              width: document.width,
+              height: document.height,
+              layers: document.layers,
+            },
+          }),
         },
       );
       const result = (await response.json()) as { error?: string; id?: string };
       if (!response.ok) {
-        throw new Error(result.error ?? `Could not ${publishedMapId ? "save" : "publish"} map.`);
+        throw new Error(
+          result.error ??
+            `Could not ${publishedMapId ? "save" : "publish"} map.`,
+        );
       }
 
       const savedId = result.id ?? publishedMapId;
       if (savedId) rememberPublishedMap(savedId, name);
       setUploadState("success");
-      setUploadMessage(publishedMapId ? "Saved" : `Published${savedId ? ` · ${savedId}` : ""}`);
+      setUploadMessage(
+        publishedMapId ? "Saved" : `Published${savedId ? ` · ${savedId}` : ""}`,
+      );
     } catch (error) {
       setUploadState("error");
       setUploadMessage(
@@ -457,8 +516,47 @@ export default function DrawPage() {
           setAssetEntries([]);
         }
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  // Preload natural sizes for every asset (including collapsed orientation /
+  // state variants) so A/D rotation can resize placed items correctly.
+  useEffect(() => {
+    let cancelled = false;
+    for (const entry of assetEntries) {
+      const image = new window.Image();
+      image.onload = () => {
+        if (cancelled) return;
+        setAssetDimensions((current) => {
+          if (current[entry.assetPath]) return current;
+          return {
+            ...current,
+            [entry.assetPath]: {
+              width: image.naturalWidth,
+              height: image.naturalHeight,
+            },
+          };
+        });
+      };
+      image.src = entry.assetPath;
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [assetEntries]);
+
+  useEffect(() => {
+    if (!isRestorePanelOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setIsRestorePanelOpen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isRestorePanelOpen]);
 
   useEffect(() => {
     const shortcutTools: Record<string, DrawTool> = {
@@ -473,6 +571,9 @@ export default function DrawPage() {
       if (event.key === "Tab") {
         return;
       }
+      if (isRestorePanelOpen) {
+        return;
+      }
       const target = event.target;
       if (
         target instanceof HTMLInputElement ||
@@ -483,20 +584,46 @@ export default function DrawPage() {
         return;
       }
 
-      if ((event.key === "Delete" || event.key === "Backspace") && selection?.type === "tile") {
+      if (event.key === "Escape" && selection) {
         event.preventDefault();
-        const selectedTile = selection;
-        commitDocument((current) => ({
-          ...current,
-          layers: current.layers.map((layer) => {
-            if (layer.id !== selectedTile.layerId) return layer;
-            const tiles = [...layer.tiles];
-            const border = [...layer.border];
-            tiles[selectedTile.index] = null;
-            border[selectedTile.index] = null;
-            return { ...layer, tiles, border };
-          }),
-        }));
+        setSelection(null);
+        setPreview([]);
+        return;
+      }
+
+      if (
+        (event.key === "Delete" || event.key === "Backspace") &&
+        selection
+      ) {
+        event.preventDefault();
+        if (selection.type === "tile") {
+          const selectedTile = selection;
+          commitDocument((current) => ({
+            ...current,
+            layers: current.layers.map((layer) => {
+              if (layer.id !== selectedTile.layerId) return layer;
+              const tiles = [...layer.tiles];
+              const border = [...layer.border];
+              tiles[selectedTile.index] = null;
+              border[selectedTile.index] = null;
+              return { ...layer, tiles, border };
+            }),
+          }));
+        } else {
+          const selectedItem = selection;
+          commitDocument((current) => ({
+            ...current,
+            layers: current.layers.map((layer) => {
+              if (layer.id !== selectedItem.layerId) return layer;
+              return {
+                ...layer,
+                items: layer.items.filter(
+                  (item) => item.id !== selectedItem.itemId,
+                ),
+              };
+            }),
+          }));
+        }
         setSelection(null);
         setPreview([]);
         return;
@@ -531,6 +658,15 @@ export default function DrawPage() {
         return;
       }
 
+      if (
+        (command === "a" || command === "d") &&
+        selection?.type === "item"
+      ) {
+        event.preventDefault();
+        rotateSelectionRef.current(command === "a" ? -1 : 1);
+        return;
+      }
+
       if (event.key.startsWith("Arrow")) {
         if (selection) {
           event.preventDefault();
@@ -550,7 +686,15 @@ export default function DrawPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [clearMap, commitDocument, redo, selection, snapToGrid, undo]);
+  }, [
+    clearMap,
+    commitDocument,
+    isRestorePanelOpen,
+    redo,
+    selection,
+    snapToGrid,
+    undo,
+  ]);
 
   useEffect(() => {
     if (isLoaded) {
@@ -558,9 +702,12 @@ export default function DrawPage() {
     }
   }, [document, isLoaded]);
 
-  const currentLayer = document.layers.find((layer) => layer.id === selectedLayerId) ?? document.layers[0];
+  const currentLayer =
+    document.layers.find((layer) => layer.id === selectedLayerId) ??
+    document.layers[0];
   const tileCount = document.layers.reduce<number>(
-    (count, layer) => count + layer.tiles.filter((label) => label !== null).length,
+    (count, layer) =>
+      count + layer.tiles.filter((label) => label !== null).length,
     0,
   );
   const previewKeys = useMemo(
@@ -568,18 +715,20 @@ export default function DrawPage() {
     [preview],
   );
   const previewLabels = useMemo(
-    () =>
-      new Map(
-        preview.map(({ point, label }) => [pointKey(point), label]),
-      ),
+    () => new Map(preview.map(({ point, label }) => [pointKey(point), label])),
     [preview],
   );
 
   function updateSelectedLayer(points: Point[], label: number | null) {
-    mutateDocument((current) => paintPoints(current, points, label, selectedLayerId));
+    mutateDocument((current) =>
+      paintPoints(current, points, label, selectedLayerId),
+    );
   }
 
-  function pointFromPointer(event: React.PointerEvent<HTMLDivElement>, precise = false) {
+  function pointFromPointer(
+    event: React.PointerEvent<HTMLDivElement>,
+    precise = false,
+  ) {
     const canvas = canvasRef.current;
     if (!canvas) {
       return null;
@@ -600,25 +749,67 @@ export default function DrawPage() {
       return;
     }
 
-    const point = pointFromPointer(event, Boolean(selectedAsset && tool === "brush"));
+    const point = pointFromPointer(
+      event,
+      Boolean(selectedAsset && tool === "brush"),
+    );
     if (!point || !canvasRef.current) {
       return;
     }
 
     const hitItem = findItemAt(point);
-    if (hitItem) {
-      setSelection({ type: "item", layerId: hitItem.layerId, itemId: hitItem.item.id });
+    const canStackSmallItemOnSurface =
+      Boolean(selectedAsset) &&
+      tool === "brush" &&
+      selectedAsset !== null &&
+      isShopSmallItem(selectedAsset.assetPath) &&
+      hitItem !== null &&
+      isSurfaceFurniture(hitItem.item.assetPath);
+
+    if (hitItem && !canStackSmallItemOnSurface) {
+      setSelection({
+        type: "item",
+        layerId: hitItem.layerId,
+        itemId: hitItem.item.id,
+      });
       return;
     }
     if (selectedAsset && tool === "brush") {
-      const dimensions = assetDimensions[selectedAsset.assetPath] ?? { width: CELL_SIZE, height: CELL_SIZE };
-      const rawSize = gridSizeForAsset(dimensions.width, dimensions.height, TILE_SOURCE_SIZE);
-      const size = { width: Math.min(document.width, rawSize.width), height: Math.min(document.height, rawSize.height) };
+      const dimensions = assetDimensions[selectedAsset.assetPath] ?? {
+        width: CELL_SIZE,
+        height: CELL_SIZE,
+      };
+      const rawSize = gridSizeForAsset(
+        dimensions.width,
+        dimensions.height,
+        TILE_SOURCE_SIZE,
+      );
+      const size = {
+        width: Math.min(document.width, rawSize.width),
+        height: Math.min(document.height, rawSize.height),
+      };
+      // Stack cups/plates/etc. on the same layer as the table/counter so they
+      // paint above it (items append after existing furniture on that layer).
+      const targetLayerId = canStackSmallItemOnSurface
+        ? hitItem!.layerId
+        : selectedLayerId;
       const item: MapItem = {
         id: crypto.randomUUID(),
         assetPath: selectedAsset.assetPath,
-        x: Math.max(0, Math.min(document.width - size.width, snapToGrid ? Math.floor(point.x) : point.x)),
-        y: Math.max(0, Math.min(document.height - size.height, snapToGrid ? Math.floor(point.y) : point.y)),
+        x: Math.max(
+          0,
+          Math.min(
+            document.width - size.width,
+            snapToGrid ? Math.floor(point.x) : point.x,
+          ),
+        ),
+        y: Math.max(
+          0,
+          Math.min(
+            document.height - size.height,
+            snapToGrid ? Math.floor(point.y) : point.y,
+          ),
+        ),
         width: size.width,
         height: size.height,
         sourceWidth: dimensions.width,
@@ -626,16 +817,24 @@ export default function DrawPage() {
       };
       commitDocument((current) => ({
         ...current,
-        layers: current.layers.map((layer) => layer.id === selectedLayerId ? { ...layer, items: [...layer.items, item] } : layer),
+        layers: current.layers.map((layer) =>
+          layer.id === targetLayerId
+            ? { ...layer, items: [...layer.items, item] }
+            : layer,
+        ),
       }));
-      setSelection({ type: "item", layerId: selectedLayerId, itemId: item.id });
+      setSelection({ type: "item", layerId: targetLayerId, itemId: item.id });
       return;
     }
 
     event.currentTarget.setPointerCapture(event.pointerId);
     setDrag({ start: point, pointerId: event.pointerId });
     beginGesture();
-    setSelection({ type: "tile", layerId: selectedLayerId, index: point.y * document.width + point.x });
+    setSelection({
+      type: "tile",
+      layerId: selectedLayerId,
+      index: point.y * document.width + point.x,
+    });
 
     if (tool === "brush" || tool === "erase") {
       updateSelectedLayer([point], tool === "erase" ? null : selectedLabel);
@@ -724,11 +923,24 @@ export default function DrawPage() {
   }
 
   function findItemAt(point: Point) {
-    for (let layerIndex = document.layers.length - 1; layerIndex >= 0; layerIndex -= 1) {
+    for (
+      let layerIndex = document.layers.length - 1;
+      layerIndex >= 0;
+      layerIndex -= 1
+    ) {
       const layer = document.layers[layerIndex];
-      for (let itemIndex = layer.items.length - 1; itemIndex >= 0; itemIndex -= 1) {
+      for (
+        let itemIndex = layer.items.length - 1;
+        itemIndex >= 0;
+        itemIndex -= 1
+      ) {
         const item = layer.items[itemIndex];
-        if (point.x >= item.x && point.x < item.x + item.width && point.y >= item.y && point.y < item.y + item.height) {
+        if (
+          point.x >= item.x &&
+          point.x < item.x + item.width &&
+          point.y >= item.y &&
+          point.y < item.y + item.height
+        ) {
           return { layerId: layer.id, item };
         }
       }
@@ -739,7 +951,14 @@ export default function DrawPage() {
   function moveSelection(key: string) {
     if (!selection) return;
     const step = snapToGrid ? 1 : 0.25;
-    const delta = key === "ArrowLeft" ? { x: -step, y: 0 } : key === "ArrowRight" ? { x: step, y: 0 } : key === "ArrowUp" ? { x: 0, y: -step } : { x: 0, y: step };
+    const delta =
+      key === "ArrowLeft"
+        ? { x: -step, y: 0 }
+        : key === "ArrowRight"
+          ? { x: step, y: 0 }
+          : key === "ArrowUp"
+            ? { x: 0, y: -step }
+            : { x: 0, y: step };
     if (selection.type === "item") {
       commitDocument((current) => ({
         ...current,
@@ -747,20 +966,47 @@ export default function DrawPage() {
           if (layer.id !== selection.layerId) return layer;
           return {
             ...layer,
-            items: layer.items.map((item) => item.id !== selection.itemId ? item : {
-              ...item,
-              x: Math.max(0, Math.min(current.width - item.width, (snapToGrid ? Math.round(item.x) : item.x) + delta.x)),
-              y: Math.max(0, Math.min(current.height - item.height, (snapToGrid ? Math.round(item.y) : item.y) + delta.y)),
-            }),
+            items: layer.items.map((item) =>
+              item.id !== selection.itemId
+                ? item
+                : {
+                    ...item,
+                    x: Math.max(
+                      0,
+                      Math.min(
+                        current.width - item.width,
+                        (snapToGrid ? Math.round(item.x) : item.x) + delta.x,
+                      ),
+                    ),
+                    y: Math.max(
+                      0,
+                      Math.min(
+                        current.height - item.height,
+                        (snapToGrid ? Math.round(item.y) : item.y) + delta.y,
+                      ),
+                    ),
+                  },
+            ),
           };
         }),
       }));
     } else {
       const layer = currentLayer;
       if (!layer) return;
-      const point = { x: selection.index % document.width, y: Math.floor(selection.index / document.width) };
+      const point = {
+        x: selection.index % document.width,
+        y: Math.floor(selection.index / document.width),
+      };
       const nextPoint = { x: point.x + delta.x, y: point.y + delta.y };
-      if (!Number.isInteger(nextPoint.x) || !Number.isInteger(nextPoint.y) || nextPoint.x < 0 || nextPoint.y < 0 || nextPoint.x >= document.width || nextPoint.y >= document.height) return;
+      if (
+        !Number.isInteger(nextPoint.x) ||
+        !Number.isInteger(nextPoint.y) ||
+        nextPoint.x < 0 ||
+        nextPoint.y < 0 ||
+        nextPoint.x >= document.width ||
+        nextPoint.y >= document.height
+      )
+        return;
       const nextIndex = nextPoint.y * document.width + nextPoint.x;
       commitDocument((current) => ({
         ...current,
@@ -769,15 +1015,82 @@ export default function DrawPage() {
           const tiles = [...candidate.tiles];
           tiles[nextIndex] = tiles[selection.index];
           tiles[selection.index] = null;
-          return { ...candidate, tiles, border: candidate.border.map((label, index) => index === selection.index || index === nextIndex ? null : label) };
+          return {
+            ...candidate,
+            tiles,
+            border: candidate.border.map((label, index) =>
+              index === selection.index || index === nextIndex ? null : label,
+            ),
+          };
         }),
       }));
       setSelection({ ...selection, index: nextIndex });
     }
   }
 
+  function rotateSelection(direction: -1 | 1) {
+    if (selection?.type !== "item") return;
+    const currentDocument = documentRef.current;
+    const layer = currentDocument.layers.find(
+      (candidate) => candidate.id === selection.layerId,
+    );
+    const selectedItem = layer?.items.find(
+      (item) => item.id === selection.itemId,
+    );
+    if (!selectedItem) return;
+    const shopRotated = rotateShopItemAssetPath(
+      selectedItem.assetPath,
+      direction,
+    );
+    const nextAssetPath =
+      shopRotated !== selectedItem.assetPath
+        ? shopRotated
+        : rotateAssetPathAmong(
+            selectedItem.assetPath,
+            direction,
+            assetEntries.map((entry) => entry.assetPath),
+          );
+    if (nextAssetPath === selectedItem.assetPath) return;
+
+    const dimensions = assetDimensions[nextAssetPath];
+    const nextSize = dimensions
+      ? gridSizeForAsset(
+          dimensions.width,
+          dimensions.height,
+          TILE_SOURCE_SIZE,
+        )
+      : {width: selectedItem.width, height: selectedItem.height};
+
+    commitDocument((current) => ({
+      ...current,
+      layers: current.layers.map((candidate) =>
+        candidate.id !== selection.layerId
+          ? candidate
+          : {
+              ...candidate,
+              items: candidate.items.map((item) => {
+                if (item.id !== selection.itemId) return item;
+                const width = Math.min(current.width, nextSize.width);
+                const height = Math.min(current.height, nextSize.height);
+                return {
+                  ...item,
+                  assetPath: nextAssetPath,
+                  width,
+                  height,
+                  sourceWidth: dimensions?.width ?? item.sourceWidth,
+                  sourceHeight: dimensions?.height ?? item.sourceHeight,
+                  x: Math.max(0, Math.min(current.width - width, item.x)),
+                  y: Math.max(0, Math.min(current.height - height, item.y)),
+                };
+              }),
+            },
+      ),
+    }));
+  }
+
   useEffect(() => {
     moveSelectionRef.current = moveSelection;
+    rotateSelectionRef.current = rotateSelection;
   });
 
   function addLayer() {
@@ -788,42 +1101,53 @@ export default function DrawPage() {
       index += 1;
       id = String(index).padStart(2, "0");
     }
-    commitDocument((current) => ({ ...current, layers: [...current.layers, createEmptyMapLayer(id, current.width, current.height)] }));
+    commitDocument((current) => ({
+      ...current,
+      layers: [
+        ...current.layers,
+        createEmptyMapLayer(id, current.width, current.height),
+      ],
+    }));
     setSelectedLayerId(id);
   }
 
   return (
-    <main className="min-h-dvh bg-[#0b0c0e] text-[#f5ead9]">
-      <header className="border-b border-white/10 bg-[#111318]/90 px-5 py-6 sm:px-8">
+    <main className="map-editor-page min-h-dvh text-[#f5ead9]">
+      <SparklingStars />
+      <header className="relative z-10 border-b border-white/10 bg-[#0b0e12]/18 px-5 py-7 backdrop-blur-sm sm:px-8 sm:py-9">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-end justify-between gap-5">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber-200/60">
-              Sapiens / map tools
+            <p className="font-space text-[10px] uppercase tracking-[0.34em] text-cyan-100/55">
+              Sapiens / draw
             </p>
-            <h1 className="mt-2 font-display text-5xl tracking-[-0.04em] sm:text-6xl">
-              Draw a world
+            <h1 className="mt-2 font-display text-5xl tracking-[-0.045em] text-[#f7f0e6] sm:text-6xl">
+              Paint your world
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-[#cfc3b3]">
-              Paint any user-created layer from the floors and walls atlas, or
-              place items above it. Drag to draw connected lines and rooms.
-            </p>
           </div>
-          <div className="flex items-center gap-3 font-mono text-xs uppercase tracking-[0.16em] text-[#a9b3b5]">
-            <span className="rounded-full border border-emerald-300/20 bg-emerald-300/8 px-3 py-2 text-emerald-200/80">
-              {isLoaded ? (publishedMapId ? "published map" : "saved locally") : "loading draft"}
+          <div className="flex items-center gap-3 font-space text-[10px] uppercase tracking-[0.16em] text-[#9caead]">
+            <span className="rounded-full border border-cyan-200/20 bg-cyan-200/[0.06] px-3 py-2 text-cyan-100/80 shadow-[0_0_24px_rgba(103,232,249,0.08)]">
+              {isLoaded
+                ? publishedMapId
+                  ? "published map"
+                  : "saved locally"
+                : "loading draft"}
             </span>
-            <span>{document.width} × {document.height}</span>
+            <span>
+              {document.width} × {document.height}
+            </span>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1500px] gap-5 px-5 py-5 sm:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="min-w-0 rounded-3xl border border-white/10 bg-[#15171b] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:p-6">
+      <div className="relative z-10 mx-auto grid max-w-[1500px] gap-5 px-5 py-5 sm:px-8 sm:py-7 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="min-w-0 rounded-[1.75rem] border border-white/10 bg-[#11161a]/85 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.34)] backdrop-blur-md sm:p-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-              <label className="sr-only" htmlFor="map-name">Map name</label>
+              <label className="sr-only" htmlFor="map-name">
+                Map name
+              </label>
               <input
-                className="w-44 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-[#f5ead9] outline-none placeholder:text-[#778084] focus:border-amber-200/50 focus:ring-2 focus:ring-amber-100/20"
+                className="w-44 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-[#f5ead9] outline-none placeholder:text-[#778084] transition focus:border-cyan-100/45 focus:ring-2 focus:ring-cyan-100/15"
                 id="map-name"
                 maxLength={120}
                 onChange={(event) => {
@@ -836,48 +1160,78 @@ export default function DrawPage() {
                 placeholder="Map name"
                 value={mapName}
               />
-              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/20 p-1.5">
-              {document.layers.map((layer) => (
+              <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-black/25 p-1.5 shadow-[0_0_24px_rgba(0,0,0,0.18)]">
+                {document.layers.map((layer) => (
+                  <button
+                    aria-pressed={selectedLayerId === layer.id}
+                    className={`rounded-xl px-4 py-2 font-space text-[10px] font-bold uppercase tracking-[0.17em] transition ${selectedLayerId === layer.id ? "bg-[#f4eadc] text-[#17130f] shadow-[0_0_18px_rgba(244,234,220,0.14)]" : "text-[#aeb6b7] hover:bg-white/8 hover:text-white"}`}
+                    key={layer.id}
+                    onClick={() => {
+                      setSelectedLayerId(layer.id);
+                      setSelection(null);
+                    }}
+                    type="button"
+                  >
+                    {layer.name}
+                  </button>
+                ))}
                 <button
-                  aria-pressed={selectedLayerId === layer.id}
-                  className={`rounded-xl px-4 py-2 font-mono text-xs font-bold uppercase tracking-[0.17em] ${selectedLayerId === layer.id ? "bg-[#f4eadc] text-[#17130f]" : "text-[#aeb6b7] hover:bg-white/8"}`}
-                  key={layer.id}
-                  onClick={() => { setSelectedLayerId(layer.id); setSelection(null); }}
+                  aria-label="Add layer"
+                  className="rounded-xl px-3 py-2 text-cyan-100/65 transition hover:bg-white/8 hover:text-white"
+                  onClick={addLayer}
+                  title="Add layer"
                   type="button"
                 >
-                  {layer.name}
+                  <Layers3 aria-hidden size={17} />
                 </button>
-              ))}
-              <button
-                aria-label="Add layer"
-                className="rounded-xl px-3 py-2 text-[#d6c4ad] hover:bg-white/8"
-                onClick={addLayer}
-                title="Add layer"
-                type="button"
-              >
-                <Layers3 aria-hidden size={17} />
-              </button>
               </div>
               <div className="flex items-center gap-1">
-                <EditorActionButton Icon={Eye} label="View map" onClick={openGameView} />
-                <EditorActionButton Icon={Download} label="Download map" onClick={downloadMap} />
-                <EditorActionButton Icon={Upload} label="Restore map" onClick={openRestorePanel} />
+                <EditorActionButton
+                  Icon={Eye}
+                  label="View map"
+                  onClick={openGameView}
+                />
+                <EditorActionButton
+                  Icon={Download}
+                  label="Download map"
+                  onClick={downloadMap}
+                />
+                <EditorActionButton
+                  Icon={Upload}
+                  label="Restore map"
+                  onClick={openRestorePanel}
+                />
                 <EditorActionButton
                   disabled={uploadState === "uploading"}
                   Icon={publishedMapId ? Save : CloudUpload}
                   label={publishedMapId ? "Save map" : "Publish map"}
                   onClick={publishMap}
                 />
-                <EditorActionButton Icon={FilePlus2} label="New map" onClick={createNewMap} />
-                <input accept="application/json,.json" className="hidden" onChange={restoreDownloadedMap} ref={mapFileInputRef} type="file" />
+                <EditorActionButton
+                  Icon={FilePlus2}
+                  label="New map"
+                  onClick={createNewMap}
+                />
+                <input
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={restoreDownloadedMap}
+                  ref={mapFileInputRef}
+                  type="file"
+                />
               </div>
             </div>
-            <p className="font-mono text-xs uppercase tracking-[0.17em] text-[#aab2b4]">
-              {tileCount} tiles / {document.layers.reduce((count, layer) => count + layer.items.length, 0)} items
+            <p className="font-space text-[10px] uppercase tracking-[0.17em] text-[#aab2b4]">
+              {tileCount} tiles /{" "}
+              {document.layers.reduce(
+                (count, layer) => count + layer.items.length,
+                0,
+              )}{" "}
+              items
             </p>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-white/8 bg-[#0c0e11] p-2">
+          <div className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-white/8 bg-[#0a0e11]/90 p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
             {TOOLS.map((entry) => (
               <button
                 aria-label={`${entry.label} tool. Press ${entry.shortcut}.`}
@@ -941,17 +1295,25 @@ export default function DrawPage() {
               <EditorActionButton
                 Icon={Fence}
                 label="Border"
-                onClick={() => commitDocument((current) => applyWoodBorder(current, selectedLayerId))}
+                onClick={() =>
+                  commitDocument((current) =>
+                    applyWoodBorder(current, selectedLayerId),
+                  )
+                }
               />
               <EditorActionButton
                 Icon={CircleOff}
                 label="Clear border"
-                onClick={() => commitDocument((current) => clearWoodBorder(current, selectedLayerId))}
+                onClick={() =>
+                  commitDocument((current) =>
+                    clearWoodBorder(current, selectedLayerId),
+                  )
+                }
               />
             </div>
           </div>
 
-          <div className="mt-5 overflow-auto rounded-2xl border border-white/10 bg-[#070809] p-4 scrollbar-pill">
+          <div className="mt-5 overflow-auto rounded-2xl border border-cyan-100/10 bg-[#070a0c] p-4 scrollbar-pill shadow-[0_0_0_4px_rgba(0,0,0,0.16)_inset]">
             <div
               aria-label={`Layer ${selectedLayerId} tilemap`}
               className="relative grid touch-none select-none"
@@ -968,68 +1330,98 @@ export default function DrawPage() {
                 width: document.width * CELL_SIZE,
               }}
             >
-              {Array.from({ length: document.width * document.height }, (_, index) => {
-                const point = {
-                  x: index % document.width,
-                  y: Math.floor(index / document.width),
-                };
-                const cellKey = pointKey(point);
-                const isPreview = previewKeys.has(cellKey);
-                const layerLabel = document.layers.reduce<number | null>((visible, layer) => {
-                  const label = layer.border[index] ?? layer.tiles[index];
-                  return label ?? visible;
-                }, null);
-                const visibleLabel = isPreview
-                  ? tool === "erase"
-                    ? null
-                    : previewLabels.get(cellKey) ?? selectedLabel
-                  : layerLabel;
-
-                return (
-                  <div
-                    aria-label={`cell ${point.x + 1}, ${point.y + 1}`}
-                    className={`relative bg-[#101216] ${
-                      showGrid ? "border-r border-b border-white/12" : ""
-                    } ${
-                      isPreview ? "bg-amber-100/20" : ""
-                    }`}
-                    key={`${point.x}-${point.y}`}
-                    role="gridcell"
-                    style={{ height: CELL_SIZE, width: CELL_SIZE }}
-                  >
-                    {visibleLabel !== null ? (
-                      <Image
-                        alt=""
-                        aria-hidden
-                        className="h-full w-full [image-rendering:pixelated]"
-                        draggable={false}
-                        height={TILE_SOURCE_SIZE}
-                        src={`/assets/floorsandwalls/${fileNameForSheetLabel(visibleLabel)}`}
-                        unoptimized
-                        width={TILE_SOURCE_SIZE}
-                      />
-                    ) : null}
-                    {isPreview ? (
-                      <span className="pointer-events-none absolute inset-0 border-2 border-amber-100/80" />
-                    ) : null}
-                  </div>
-                );
-              })}
-              {document.layers.map((layer, layerIndex) => layer.items.map((item) => (
-                (() => {
-                  const renderSize = itemRenderSize(item, CELL_SIZE, TILE_SOURCE_SIZE);
-                  return (
-                <div
-                  aria-label={`Item ${item.assetPath}`}
-                  className={`pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-md ${selection?.type === "item" && selection.layerId === layer.id && selection.itemId === item.id ? "ring-2 ring-amber-100" : ""}`}
-                  key={`${layer.id}-${item.id}`}
-                  style={{ left: item.x * CELL_SIZE, top: item.y * CELL_SIZE, width: item.width * CELL_SIZE, height: item.height * CELL_SIZE, zIndex: 20 + layerIndex }}
-                >
-                  <Image alt="" aria-hidden className="object-contain [image-rendering:pixelated]" draggable={false} height={item.sourceHeight} src={normalizeAssetPath(item.assetPath)} style={{ height: renderSize.height, width: renderSize.width }} unoptimized width={item.sourceWidth} />
-                </div>
+              {Array.from(
+                { length: document.width * document.height },
+                (_, index) => {
+                  const point = {
+                    x: index % document.width,
+                    y: Math.floor(index / document.width),
+                  };
+                  const cellKey = pointKey(point);
+                  const isPreview = previewKeys.has(cellKey);
+                  const layerLabel = document.layers.reduce<number | null>(
+                    (visible, layer) => {
+                      const label = layer.border[index] ?? layer.tiles[index];
+                      return label ?? visible;
+                    },
+                    null,
                   );
-                })()
-              )))}
+                  const visibleLabel = isPreview
+                    ? tool === "erase"
+                      ? null
+                      : (previewLabels.get(cellKey) ?? selectedLabel)
+                    : layerLabel;
+
+                  return (
+                    <div
+                      aria-label={`cell ${point.x + 1}, ${point.y + 1}`}
+                      className={`relative bg-[#101216] ${
+                        showGrid ? "border-r border-b border-white/12" : ""
+                      } ${isPreview ? "bg-amber-100/20" : ""}`}
+                      key={`${point.x}-${point.y}`}
+                      role="gridcell"
+                      style={{ height: CELL_SIZE, width: CELL_SIZE }}
+                    >
+                      {visibleLabel !== null ? (
+                        <Image
+                          alt=""
+                          aria-hidden
+                          className="h-full w-full [image-rendering:pixelated]"
+                          draggable={false}
+                          height={TILE_SOURCE_SIZE}
+                          src={`/assets/floorsandwalls/${fileNameForSheetLabel(visibleLabel)}`}
+                          unoptimized
+                          width={TILE_SOURCE_SIZE}
+                        />
+                      ) : null}
+                      {isPreview ? (
+                        <span className="pointer-events-none absolute inset-0 border-2 border-amber-100/80" />
+                      ) : null}
+                    </div>
+                  );
+                },
+              )}
+              {document.layers.map((layer, layerIndex) =>
+                layer.items.map((item) =>
+                  (() => {
+                    const renderSize = itemRenderSize(
+                      item,
+                      CELL_SIZE,
+                      TILE_SOURCE_SIZE,
+                    );
+                    return (
+                      <div
+                        aria-label={`Item ${item.assetPath}`}
+                        className={`pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-md ${selection?.type === "item" && selection.layerId === layer.id && selection.itemId === item.id ? "ring-2 ring-amber-100" : ""}`}
+                        key={`${layer.id}-${item.id}`}
+                        style={{
+                          left: item.x * CELL_SIZE,
+                          top: item.y * CELL_SIZE,
+                          width: item.width * CELL_SIZE,
+                          height: item.height * CELL_SIZE,
+                          zIndex: 20 + layerIndex,
+                        }}
+                      >
+                        <Image
+                          alt=""
+                          aria-hidden
+                          className="object-contain [image-rendering:pixelated]"
+                          draggable={false}
+                          height={item.sourceHeight}
+                          key={item.assetPath}
+                          src={normalizeAssetPath(item.assetPath)}
+                          style={{
+                            height: renderSize.height,
+                            width: renderSize.width,
+                          }}
+                          unoptimized
+                          width={item.sourceWidth}
+                        />
+                      </div>
+                    );
+                  })(),
+                ),
+              )}
             </div>
           </div>
 
@@ -1044,22 +1436,37 @@ export default function DrawPage() {
           </div>
         </section>
 
-        <aside className="min-w-0 rounded-3xl border border-white/10 bg-[#121417] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.22)] sm:p-5">
+        <aside className="min-w-0 rounded-[1.75rem] border border-white/10 bg-[#10171a]/90 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.3)] backdrop-blur-md sm:p-5 xl:sticky xl:top-6 xl:self-start">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <Palette aria-label="Tile and item palette" className="text-amber-200/70" size={22} />
+            <Palette
+              aria-label="Tile and item palette"
+              className="text-cyan-100/70"
+              size={22}
+            />
             <button
               aria-label="Generate random layout"
               className="rounded-xl bg-[#e9dbc8] px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-[#1a1510] transition hover:bg-white"
               onClick={() => {
                 commitDocument((current) => {
-                  const generated = createRandomLayoutMap(current.width, current.height);
+                  const generated = createRandomLayoutMap(
+                    current.width,
+                    current.height,
+                  );
                   const generatedLayer = generated.layers[0];
-                  const targetLayerId = current.layers.find((layer) => layer.id === "00")?.id ?? current.layers[0]?.id;
+                  const targetLayerId =
+                    current.layers.find((layer) => layer.id === "00")?.id ??
+                    current.layers[0]?.id;
                   return {
                     ...current,
-                    layers: current.layers.map((layer) => layer.id === targetLayerId && generatedLayer
-                      ? { ...layer, tiles: generatedLayer.tiles, border: generatedLayer.border }
-                      : layer),
+                    layers: current.layers.map((layer) =>
+                      layer.id === targetLayerId && generatedLayer
+                        ? {
+                            ...layer,
+                            tiles: generatedLayer.tiles,
+                            border: generatedLayer.border,
+                          }
+                        : layer,
+                    ),
                   };
                 });
                 setSelectedLayerId("00");
@@ -1073,7 +1480,9 @@ export default function DrawPage() {
           </div>
 
           {uploadMessage ? (
-            <p aria-live="polite" className="sr-only">{uploadMessage}</p>
+            <p aria-live="polite" className="sr-only">
+              {uploadMessage}
+            </p>
           ) : null}
 
           <div className="mt-4 flex rounded-2xl border border-white/8 bg-white/4 p-1">
@@ -1093,12 +1502,24 @@ export default function DrawPage() {
 
           {activeTab === "tile" ? (
             <div className="mt-4 overflow-auto rounded-2xl border border-amber-100/12 bg-[#0b0d0f] p-2 scrollbar-pill">
-              <div className="grid w-max" style={{ gridTemplateColumns: `repeat(18, ${PALETTE_CELL_SIZE}px)`, gridTemplateRows: `repeat(9, ${PALETTE_CELL_SIZE}px)` }}>
+              <div
+                className="grid w-max"
+                style={{
+                  gridTemplateColumns: `repeat(18, ${PALETTE_CELL_SIZE}px)`,
+                  gridTemplateRows: `repeat(9, ${PALETTE_CELL_SIZE}px)`,
+                }}
+              >
                 {atlasTiles.map((tile) => (
                   <PaletteTile
-                    isSelected={selectedAsset === null && selectedLabel === tile.label}
+                    isSelected={
+                      selectedAsset === null && selectedLabel === tile.label
+                    }
                     key={tile.label}
-                    onSelect={() => { setSelectedLabel(tile.label); setSelectedAsset(null); setTool("brush"); }}
+                    onSelect={() => {
+                      setSelectedLabel(tile.label);
+                      setSelectedAsset(null);
+                      setTool("brush");
+                    }}
                     tile={tile}
                   />
                 ))}
@@ -1108,92 +1529,155 @@ export default function DrawPage() {
             <div className="mt-4 rounded-2xl border border-amber-100/12 bg-[#0b0d0f] p-3">
               <div className="flex gap-2">
                 <div className="relative min-w-0 flex-1">
-                  <Search aria-hidden className="pointer-events-none absolute left-3 top-2.5 text-[#778084]" size={15} />
-                  <input className="w-full rounded-xl border border-white/10 bg-black/20 py-2 pl-9 pr-3 text-sm outline-none focus:border-amber-200/50" onChange={(event) => setAssetSearch(event.target.value)} placeholder="Search items" value={assetSearch} />
+                  <Search
+                    aria-hidden
+                    className="pointer-events-none absolute left-3 top-2.5 text-[#778084]"
+                    size={15}
+                  />
+                  <input
+                    className="w-full rounded-xl border border-white/10 bg-black/20 py-2 pl-9 pr-3 text-sm outline-none focus:border-amber-200/50"
+                    onChange={(event) => setAssetSearch(event.target.value)}
+                    placeholder="Search items"
+                    value={assetSearch}
+                  />
                 </div>
-                <select className="max-w-[120px] rounded-xl border border-white/10 bg-black/20 px-2 text-xs outline-none" onChange={(event) => setAssetFolder(event.target.value)} value={assetFolder}>
+                <select
+                  className="max-w-[120px] rounded-xl border border-white/10 bg-black/20 px-2 text-xs outline-none"
+                  onChange={(event) => setAssetFolder(event.target.value)}
+                  value={assetFolder}
+                >
                   <option value="all">All folders</option>
-                  {assetFolders.map((folder) => <option key={folder} value={folder}>{folder}</option>)}
+                  {assetFolders.map((folder) => (
+                    <option key={folder} value={folder}>
+                      {folder}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="mt-3 grid max-h-80 grid-cols-3 gap-2 overflow-auto pr-1 scrollbar-translucent">
-                {assetEntries.filter((asset) => (assetFolder === "all" || asset.folder === assetFolder) && asset.name.toLowerCase().includes(assetSearch.toLowerCase())).map((asset) => (
-                  <button aria-pressed={selectedAsset?.assetPath === asset.assetPath} className={`overflow-hidden rounded-xl border p-1 text-left outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 ${selectedAsset?.assetPath === asset.assetPath ? "border-amber-100 bg-amber-100/15" : "border-white/10 hover:border-white/30"}`} key={asset.assetPath} onClick={() => { setSelectedAsset(asset); setSelection(null); setTool("brush"); }} type="button">
-                    <div className="relative h-16 w-full"><Image alt={asset.name} className="object-contain" fill src={asset.assetPath} unoptimized onLoad={(event) => setAssetDimensions((current) => ({ ...current, [asset.assetPath]: { width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight } }))} /></div>
-                    <span className="block truncate px-1 pb-1 pt-1 font-mono text-[9px] text-[#c9c0b5]">{asset.name}</span>
-                  </button>
-                ))}
+                {collapsePaletteAssetEntries(assetEntries)
+                  .filter(
+                    (asset) =>
+                      (assetFolder === "all" || asset.folder === assetFolder) &&
+                      asset.name
+                        .toLowerCase()
+                        .includes(assetSearch.toLowerCase()),
+                  )
+                  .map((asset) => (
+                    <button
+                      aria-pressed={
+                        selectedAsset?.assetPath === asset.assetPath
+                      }
+                      className={`overflow-hidden rounded-xl border p-1 text-left outline-none focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 ${selectedAsset?.assetPath === asset.assetPath ? "border-amber-100 bg-amber-100/15" : "border-white/10 hover:border-white/30"}`}
+                      key={asset.assetPath}
+                      onClick={() => {
+                        setSelectedAsset(asset);
+                        setSelection(null);
+                        setTool("brush");
+                      }}
+                      type="button"
+                    >
+                      <div className="relative h-16 w-full">
+                        <Image
+                          alt={asset.name}
+                          className="object-contain"
+                          fill
+                          src={asset.assetPath}
+                          unoptimized
+                          onLoad={(event) =>
+                            setAssetDimensions((current) => ({
+                              ...current,
+                              [asset.assetPath]: {
+                                width: event.currentTarget.naturalWidth,
+                                height: event.currentTarget.naturalHeight,
+                              },
+                            }))
+                          }
+                        />
+                      </div>
+                      <span className="block truncate px-1 pb-1 pt-1 font-mono text-[9px] text-[#c9c0b5]">
+                        {asset.name}
+                      </span>
+                    </button>
+                  ))}
               </div>
-              <p className="mt-2 font-mono text-[10px] leading-4 text-[#778084]">Select an item, then click the map to place it. Arrow keys move the selected item; H toggles snap-to-grid.</p>
+              <p className="mt-2 font-mono text-[10px] leading-4 text-[#778084]">
+                Select an item, then click the map to place it. Small items can
+                be placed on tables and kitchen counters. Arrow keys move the
+                selected item; A/D rotate front, side, and back; Delete removes
+                the selection; Esc deselects; H toggles snap-to-grid.
+              </p>
             </div>
           )}
 
-          {activeTab === "tile" ? <div className="mt-4 rounded-2xl border border-white/8 bg-white/4 p-4">
-            <div className="flex items-baseline justify-between gap-3">
-              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#aeb6b7]">
-                Rectangle tiles
-              </p>
-              <span
-                aria-label="Rectangle tool"
-                className="text-[#778084]"
-                title="Rectangle tool"
-              >
-                <Square aria-hidden size={15} strokeWidth={1.8} />
-              </span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {(["tile", "region"] as const).map((source) => (
-                <button
-                  aria-pressed={rectangleSource === source}
-                  className={`rounded-lg border px-2 py-2 font-mono text-[10px] uppercase tracking-[0.08em] outline-none transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 ${
-                    rectangleSource === source
-                      ? "border-amber-200/40 bg-amber-100 text-[#17130f]"
-                      : "border-white/10 text-[#b7ae9f] hover:bg-white/8 hover:text-white"
-                  }`}
-                  key={source}
-                  onClick={() => setRectangleSource(source)}
-                  tabIndex={rectangleSource === source ? 0 : -1}
-                  type="button"
+          {activeTab === "tile" ? (
+            <div className="mt-4 rounded-2xl border border-white/8 bg-white/4 p-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#aeb6b7]">
+                  Rectangle tiles
+                </p>
+                <span
+                  aria-label="Rectangle tool"
+                  className="text-[#778084]"
+                  title="Rectangle tool"
                 >
-                  {source === "tile" ? "Individual tile" : "Region"}
-                </button>
-              ))}
-            </div>
-            {rectangleSource === "region" ? (
-              <div className="mt-3 grid grid-cols-4 gap-2">
-                {RECTANGLE_SELECTIONS.map((selection) => {
-                const isSelected =
-                  rectangleSelection.region === selection.region &&
-                  rectangleSelection.role === selection.role;
-
-                return (
+                  <Square aria-hidden size={15} strokeWidth={1.8} />
+                </span>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {(["tile", "region"] as const).map((source) => (
                   <button
-                    aria-pressed={isSelected}
+                    aria-pressed={rectangleSource === source}
                     className={`rounded-lg border px-2 py-2 font-mono text-[10px] uppercase tracking-[0.08em] outline-none transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 ${
-                      isSelected
+                      rectangleSource === source
                         ? "border-amber-200/40 bg-amber-100 text-[#17130f]"
                         : "border-white/10 text-[#b7ae9f] hover:bg-white/8 hover:text-white"
                     }`}
-                    key={selection.label}
-                    onClick={() =>
-                      setRectangleSelection({
-                        region: selection.region,
-                        role: selection.role,
-                      })
-                    }
+                    key={source}
+                    onClick={() => setRectangleSource(source)}
+                    tabIndex={rectangleSource === source ? 0 : -1}
                     type="button"
                   >
-                    {selection.label}
+                    {source === "tile" ? "Individual tile" : "Region"}
                   </button>
-                );
-                })}
+                ))}
               </div>
-            ) : (
-              <p className="mt-3 font-mono text-[10px] leading-4 text-[#778084]">
-                Rectangle fills with the selected atlas tile.
-              </p>
-            )}
-          </div> : null}
+              {rectangleSource === "region" ? (
+                <div className="mt-3 grid grid-cols-4 gap-2">
+                  {RECTANGLE_SELECTIONS.map((selection) => {
+                    const isSelected =
+                      rectangleSelection.region === selection.region &&
+                      rectangleSelection.role === selection.role;
+
+                    return (
+                      <button
+                        aria-pressed={isSelected}
+                        className={`rounded-lg border px-2 py-2 font-mono text-[10px] uppercase tracking-[0.08em] outline-none transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 ${
+                          isSelected
+                            ? "border-amber-200/40 bg-amber-100 text-[#17130f]"
+                            : "border-white/10 text-[#b7ae9f] hover:bg-white/8 hover:text-white"
+                        }`}
+                        key={selection.label}
+                        onClick={() =>
+                          setRectangleSelection({
+                            region: selection.region,
+                            role: selection.role,
+                          })
+                        }
+                        type="button"
+                      >
+                        {selection.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="mt-3 font-mono text-[10px] leading-4 text-[#778084]">
+                  Rectangle fills with the selected atlas tile.
+                </p>
+              )}
+            </div>
+          ) : null}
 
           <div className="mt-4 grid gap-3 text-xs leading-5 text-[#b2aaa1]">
             <div className="rounded-2xl border border-white/8 p-4">
@@ -1201,9 +1685,9 @@ export default function DrawPage() {
                 Map shape
               </p>
               <p className="mt-2">
-                Rooms and corridors are an occupancy mask first. Tile labels
-                are then chosen from one coherent region per footprint so
-                generated walls do not become striped material bands.
+                Rooms and corridors are an occupancy mask first. Tile labels are
+                then chosen from one coherent region per footprint so generated
+                walls do not become striped material bands.
               </p>
             </div>
             <div className="rounded-2xl border border-white/8 p-4">
@@ -1222,81 +1706,134 @@ export default function DrawPage() {
       {isRestorePanelOpen ? (
         <div
           aria-label="Restore map panel"
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-100 grid place-items-center bg-[#020608]/80 px-4 py-6 backdrop-blur-md"
+          data-map-overlay
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setIsRestorePanelOpen(false);
+            if (event.target === event.currentTarget)
+              setIsRestorePanelOpen(false);
           }}
           role="presentation"
         >
           <section
             aria-labelledby="restore-map-title"
             aria-modal="true"
-            className="w-full max-w-2xl rounded-3xl border border-white/10 bg-[#15171b] p-5 text-[#f5ead9] shadow-[0_24px_100px_rgba(0,0,0,0.55)] sm:p-6"
+            className="max-h-[calc(100dvh-3rem)] w-full max-w-2xl overflow-y-auto rounded-[1.75rem] border border-cyan-100/15 bg-[#0c171c]/95 p-5 text-[#f7f0e6] shadow-[0_30px_100px_rgba(0,0,0,0.6),0_0_50px_rgba(46,180,176,0.07)] backdrop-blur-md scrollbar-pill sm:p-7"
             role="dialog"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-amber-200/60">
+                <p className="font-space text-[10px] uppercase tracking-[0.28em] text-cyan-100/55">
                   Restore map
                 </p>
-                <h2 className="mt-1 text-xl font-semibold" id="restore-map-title">
+                <h2
+                  className="mt-2 font-display text-3xl tracking-[-0.03em] text-[#f7f0e6] sm:text-4xl"
+                  id="restore-map-title"
+                >
                   Choose a map source
                 </h2>
+                <p className="mt-2 max-w-md text-sm leading-6 text-white/40">
+                  Load a published map or bring back a JSON file from this
+                  editor.
+                </p>
               </div>
               <button
                 aria-label="Close restore map panel"
-                className="rounded-xl p-2 text-[#aeb6b7] outline-none hover:bg-white/8 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-100"
+                className="group relative -mr-1 -mt-1 flex size-9 shrink-0 items-center justify-center text-white/45 outline-none transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
                 onClick={() => setIsRestorePanelOpen(false)}
                 type="button"
               >
                 <X aria-hidden size={18} />
+                <span className="pointer-events-none absolute left-1/2 top-0 z-50 -translate-x-1/2 -translate-y-[calc(100%+6px)] whitespace-nowrap rounded bg-black/90 px-2 py-1 font-space text-[10px] uppercase tracking-[0.08em] text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  Close
+                </span>
               </button>
             </div>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-2xl border border-white/10 bg-black/15 p-4">
-                <Database aria-hidden className="text-amber-200/75" size={20} />
-                <h3 className="mt-3 font-semibold">Existing map</h3>
-                <p className="mt-1 text-sm leading-5 text-[#a8a09a]">
+            <div className="mt-7 grid gap-3 sm:grid-cols-2 sm:gap-4">
+              <div className="flex flex-col rounded-2xl border border-cyan-100/12 bg-black/25 p-4 sm:p-5">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-10 items-center justify-center rounded-full border border-cyan-100/25 bg-cyan-200/[0.06] text-cyan-100 shadow-[0_0_24px_rgba(103,232,249,0.1)]">
+                    <Database aria-hidden size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-base text-[#f7f0e6]">Existing map</h3>
+                    <p className="mt-0.5 font-space text-[9px] uppercase tracking-[0.16em] text-cyan-100/50">
+                      Published
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-white/40">
                   Load a published map from the database.
                 </p>
-                <label className="sr-only" htmlFor="saved-map-select">Existing maps</label>
+                <label className="sr-only" htmlFor="saved-map-select">
+                  Existing maps
+                </label>
                 <select
-                  className="mt-4 w-full rounded-xl border border-white/10 bg-[#0b0d0f] px-3 py-2 text-sm outline-none focus:border-amber-200/50 focus:ring-2 focus:ring-amber-100/20"
-                  disabled={restorePanelState === "loading" || !savedMaps.length}
+                  aria-busy={restorePanelState === "loading"}
+                  className="mt-4 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-sm text-[#f7f0e6] outline-none transition focus:border-cyan-100/45 focus:ring-2 focus:ring-cyan-100/15 disabled:cursor-not-allowed disabled:opacity-45"
+                  disabled={
+                    restorePanelState === "loading" || !savedMaps.length
+                  }
                   id="saved-map-select"
                   onChange={(event) => setRestoreMapId(event.target.value)}
                   value={restoreMapId}
                 >
                   <option value="">
                     {restorePanelState === "loading"
-                      ? "Loading maps…"
+                      ? "Loading maps..."
                       : savedMaps.length
                         ? "Select a map"
                         : "No saved maps"}
                   </option>
                   {savedMaps.map((map) => (
-                    <option key={map.id} value={map.id}>{map.name}</option>
+                    <option key={map.id} value={map.id}>
+                      {map.name}
+                    </option>
                   ))}
                 </select>
+                {restorePanelState === "loading" ? (
+                  <p
+                    aria-live="polite"
+                    className="mt-2 font-space text-[10px] uppercase tracking-[0.14em] text-cyan-100/50"
+                  >
+                    Fetching published maps
+                  </p>
+                ) : null}
+                {restorePanelState !== "loading" && !savedMaps.length ? (
+                  <p className="mt-2 text-sm leading-5 text-white/35">
+                    No published maps yet. Publish one from this editor, or use
+                    a downloaded file.
+                  </p>
+                ) : null}
                 <button
-                  className="mt-3 w-full rounded-xl bg-[#e9dbc8] px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-[#1a1510] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
+                  className="mt-4 w-full rounded-xl bg-[#f4eadc] px-3 py-2.5 font-space text-[10px] font-bold uppercase tracking-[0.14em] text-[#17130f] shadow-[0_0_18px_rgba(244,234,220,0.12)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-35 disabled:shadow-none sm:mt-auto"
                   disabled={!restoreMapId || restorePanelState === "loading"}
                   onClick={restoreSavedMap}
                   type="button"
                 >
-                  Restore selected map
+                  {restorePanelState === "loading" && restoreMapId
+                    ? "Restoring..."
+                    : "Restore selected map"}
                 </button>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-black/15 p-4">
-                <FileJson aria-hidden className="text-amber-200/75" size={20} />
-                <h3 className="mt-3 font-semibold">Downloaded map</h3>
-                <p className="mt-1 text-sm leading-5 text-[#a8a09a]">
+              <div className="flex flex-col rounded-2xl border border-cyan-100/12 bg-black/25 p-4 sm:p-5">
+                <div className="flex items-center gap-3">
+                  <span className="flex size-10 items-center justify-center rounded-full border border-cyan-100/25 bg-cyan-200/[0.06] text-cyan-100 shadow-[0_0_24px_rgba(103,232,249,0.1)]">
+                    <FileJson aria-hidden size={18} />
+                  </span>
+                  <div>
+                    <h3 className="text-base text-[#f7f0e6]">Downloaded map</h3>
+                    <p className="mt-0.5 font-space text-[9px] uppercase tracking-[0.16em] text-cyan-100/50">
+                      Local file
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-3 flex-1 text-sm leading-6 text-white/40">
                   Restore a JSON map downloaded from this editor.
                 </p>
                 <button
-                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-[#f5ead9] transition hover:bg-white/8"
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-100/25 bg-black/25 px-3 py-2.5 font-space text-[10px] font-bold uppercase tracking-[0.14em] text-cyan-50 transition hover:border-cyan-100/50 hover:bg-cyan-200/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 sm:mt-auto"
                   onClick={() => mapFileInputRef.current?.click()}
                   type="button"
                 >
@@ -1307,7 +1844,11 @@ export default function DrawPage() {
             </div>
 
             {restorePanelMessage ? (
-              <p aria-live="polite" className="mt-4 rounded-xl border border-red-300/20 bg-red-950/30 px-3 py-2 text-sm text-red-100" role="alert">
+              <p
+                aria-live="polite"
+                className="mt-4 rounded-xl border border-red-300/25 bg-red-950/35 px-3 py-2.5 text-sm leading-5 text-red-100"
+                role="alert"
+              >
                 {restorePanelMessage}
               </p>
             ) : null}
@@ -1403,7 +1944,9 @@ function paintPoints(
   label: number | null,
   layerId: string,
 ): MapDocument {
-  const layer = document.layers.find((candidate) => candidate.id === layerId) ?? document.layers[0];
+  const layer =
+    document.layers.find((candidate) => candidate.id === layerId) ??
+    document.layers[0];
   if (!layer) return document;
   const tiles = [...layer.tiles];
   const border = [...layer.border];
@@ -1421,7 +1964,9 @@ function paintPoints(
   }
   return {
     ...document,
-    layers: document.layers.map((candidate) => candidate.id === layer.id ? { ...candidate, tiles, border } : candidate),
+    layers: document.layers.map((candidate) =>
+      candidate.id === layer.id ? { ...candidate, tiles, border } : candidate,
+    ),
   };
 }
 
@@ -1446,8 +1991,16 @@ function pointsForTool(tool: DrawTool, start: Point, end: Point): Point[] {
   }
 
   const points: Point[] = [];
-  for (let y = Math.min(start.y, end.y); y <= Math.max(start.y, end.y); y += 1) {
-    for (let x = Math.min(start.x, end.x); x <= Math.max(start.x, end.x); x += 1) {
+  for (
+    let y = Math.min(start.y, end.y);
+    y <= Math.max(start.y, end.y);
+    y += 1
+  ) {
+    for (
+      let x = Math.min(start.x, end.x);
+      x <= Math.max(start.x, end.x);
+      x += 1
+    ) {
       points.push({ x, y });
     }
   }

@@ -19,9 +19,58 @@ export type WikipediaSearchResult = {
   thumbnail?: unknown;
 };
 
+export type WikipediaSectionInfo = {
+  index: number;
+  line: string;
+  level: number;
+  number: string;
+  anchor?: string;
+  isLead: boolean;
+};
+
+export type WikipediaSectionContent = {
+  title: string;
+  sourceUrl: string;
+  sectionIndex: number;
+  sectionLine: string;
+  level: number;
+  isLead: boolean;
+  /** Parsed HTML for the section (may be empty for some edge cases). */
+  html: string;
+  /** Wikitext for the section when available. */
+  wikitext: string;
+};
+
 type CacheEntry = {
   value: unknown;
   expiresAt: number;
+};
+
+type ParseSectionHeading = {
+  index?: string | number;
+  line?: string;
+  hLevel?: string | number;
+  level?: string | number;
+  number?: string | number;
+  anchor?: string;
+};
+
+type ParseSectionsResponse = {
+  parse?: {
+    title?: string;
+    tocdata?: {
+      sections?: ParseSectionHeading[];
+    };
+    sections?: ParseSectionHeading[];
+  };
+};
+
+type ParseSectionResponse = {
+  parse?: {
+    title?: string;
+    text?: { ["*"]?: string } | string;
+    wikitext?: { ["*"]?: string } | string;
+  };
 };
 
 const cache = new Map<string, CacheEntry>();
@@ -58,23 +107,43 @@ function rateLimitMessage(waitMilliseconds: number) {
   return `Wikipedia rate limit reached. Requests are paused for about ${waitSeconds}s; the client stopped retrying to avoid amplifying the limit. Reuse cached results or try again shortly.`;
 }
 
+function parseStarField(value: { ["*"]?: string } | string | undefined): string {
+  if (typeof value === "string") return value;
+  if (value && typeof value["*"] === "string") return value["*"];
+  return "";
+}
+
 export class WikipediaClient {
   constructor(
     private readonly baseUrl = ORCHESTRATOR_CONFIG.wikipediaBaseUrl,
   ) {}
 
+  private pageUrl(title: string): string {
+    return `${this.baseUrl}/wiki/${encodeURIComponent(title.replaceAll(" ", "_"))}`;
+  }
+
   async getPage(title: string): Promise<WikipediaPage> {
-    return this.getCached<WikipediaPage>(
+    const page = await this.getCached<Omit<WikipediaPage, "sourceUrl"> & { sourceUrl?: string }>(
       `/w/rest.php/v1/page/${encodeURIComponent(title)}`,
       PAGE_CACHE_TTL_MS,
     );
+    return {
+      ...page,
+      sourceUrl: page.sourceUrl || this.pageUrl(page.title || title),
+    };
   }
 
   async getPageHtml(title: string): Promise<WikipediaHtmlPage> {
-    return this.getCached<WikipediaHtmlPage>(
+    const page = await this.getCached<
+      Omit<WikipediaHtmlPage, "sourceUrl"> & { sourceUrl?: string; html_url?: string }
+    >(
       `/w/rest.php/v1/page/${encodeURIComponent(title)}/with_html`,
       PAGE_CACHE_TTL_MS,
     );
+    return {
+      ...page,
+      sourceUrl: page.sourceUrl || page.html_url || this.pageUrl(page.title || title),
+    };
   }
 
   async searchPages(query: string, limit = 5): Promise<WikipediaSearchResult[]> {
@@ -90,6 +159,101 @@ export class WikipediaClient {
       ...page,
       url: `${this.baseUrl}/wiki/${encodeURIComponent(page.title.replaceAll(" ", "_"))}`,
     }));
+  }
+
+  /** Table of contents for a page. Index 0 is always the lead/summary. */
+  async getPageSections(title: string): Promise<{
+    title: string;
+    sourceUrl: string;
+    sections: WikipediaSectionInfo[];
+  }> {
+    const params = new URLSearchParams({
+      action: "parse",
+      page: title,
+      prop: "tocdata",
+      redirects: "1",
+      format: "json",
+      formatversion: "2",
+    });
+    const result = await this.getCached<ParseSectionsResponse>(
+      `/w/api.php?${params.toString()}`,
+      PAGE_CACHE_TTL_MS,
+    );
+    const parsedTitle = result.parse?.title?.trim() || title;
+    const rawSections =
+      result.parse?.tocdata?.sections ?? result.parse?.sections ?? [];
+    const headings = rawSections
+      .map((section): WikipediaSectionInfo | null => {
+        const index = Number(section.index);
+        if (!Number.isInteger(index) || index < 1) return null;
+        const level = Number(section.hLevel ?? section.level) || 2;
+        return {
+          index,
+          line: typeof section.line === "string" && section.line.trim()
+            ? section.line.trim()
+            : `Section ${index}`,
+          level,
+          number: section.number != null ? String(section.number) : String(index),
+          anchor: typeof section.anchor === "string" ? section.anchor : undefined,
+          isLead: false,
+        };
+      })
+      .filter((section): section is WikipediaSectionInfo => section != null);
+
+    return {
+      title: parsedTitle,
+      sourceUrl: this.pageUrl(parsedTitle),
+      sections: [
+        {
+          index: 0,
+          line: "Lead",
+          level: 0,
+          number: "0",
+          isLead: true,
+        },
+        ...headings,
+      ],
+    };
+  }
+
+  /** Fetch one section. `sectionIndex` 0 is the lead/summary. */
+  async getPageSection(title: string, sectionIndex: number): Promise<WikipediaSectionContent> {
+    if (!Number.isInteger(sectionIndex) || sectionIndex < 0) {
+      throw new Error("sectionIndex must be a non-negative integer");
+    }
+    const toc = await this.getPageSections(title);
+    const meta = toc.sections.find((section) => section.index === sectionIndex);
+    if (!meta) {
+      throw new Error(
+        `Wikipedia section ${sectionIndex} not found on "${toc.title}". Use wikipedia_list_sections first.`,
+      );
+    }
+
+    const params = new URLSearchParams({
+      action: "parse",
+      page: title,
+      prop: "text|wikitext",
+      section: String(sectionIndex),
+      redirects: "1",
+      disabletoc: "1",
+      format: "json",
+      formatversion: "2",
+    });
+    const result = await this.getCached<ParseSectionResponse>(
+      `/w/api.php?${params.toString()}`,
+      PAGE_CACHE_TTL_MS,
+    );
+    const parsedTitle = result.parse?.title?.trim() || toc.title;
+    return {
+      title: parsedTitle,
+      sourceUrl: this.pageUrl(parsedTitle),
+      sectionIndex: meta.index,
+      sectionLine: meta.line,
+      level: meta.level,
+      isLead: meta.isLead,
+      html: parseStarField(result.parse?.text),
+      wikitext: parseStarField(result.parse?.wikitext),
+    };
   }
 
   async getRevisions(title: string, limit = 1): Promise<unknown> {

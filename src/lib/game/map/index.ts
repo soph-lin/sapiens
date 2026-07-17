@@ -303,12 +303,12 @@ export function buildAtlasGrid() {
   );
 }
 
-export function buildLayoutTiles(layout: MapLayoutTemplate) {
+export function buildLayoutTiles(layout: MapLayoutTemplate): PlacedMapTile[] {
   const rows = buildLayoutRows(layout);
   const zones = new Map(layout.zones.map((zone) => [zone.mark, zone]));
 
   return rows.flatMap((row, rowIndex) =>
-    [...row].flatMap((mark, columnIndex) => {
+    [...row].flatMap((mark, columnIndex): PlacedMapTile[] => {
       const zone = zones.get(mark);
 
       if (!zone) {
@@ -318,7 +318,8 @@ export function buildLayoutTiles(layout: MapLayoutTemplate) {
       const x = columnIndex + 1;
       const y = rowIndex + 1;
       const verticalDepth = verticalDepthFromSegmentTop(rows, rowIndex, columnIndex);
-      const role = verticalDepth < LAYOUT_WALL_ROWS.length ? "wall" : "floor";
+      const role: TileRole =
+        verticalDepth < LAYOUT_WALL_ROWS.length ? "wall" : "floor";
       const region = regionForLayoutCell(zone.region);
       const tile = fillTileForLayoutCell(
         role,
@@ -327,14 +328,16 @@ export function buildLayoutTiles(layout: MapLayoutTemplate) {
         columnIndex,
       );
 
-      return {
-        ...tile,
-        region,
-        role,
-        zoneName: zone.name,
-        x,
-        y,
-      };
+      return [
+        {
+          ...tile,
+          region,
+          role,
+          zoneName: zone.name,
+          x,
+          y,
+        },
+      ];
     }),
   );
 }

@@ -1,12 +1,41 @@
 /** Every furniture asset is an obstacle in the walk-through view. */
 /** Player movement speed, measured in map tiles per second. */
-export const PLAYER_SPEED = 6;
-export const PLAYER_SPRITE_SCALE = 3.5;
-export const STAND_TIME = {min: 6_000, max: 10_000};
+export const PLAYER_SPEED = 5;
+export const PLAYER_SPRITE_SCALE = 3;
 
-/** Number of map tiles visible in the walkthrough camera. */
-export const VIEW_WIDTH = 20;
-export const VIEW_HEIGHT = 14;
+export const NPC_SPEED = 4;
+
+/** Sprite render scale by character asset `ageRange`. */
+export const NPC_SPRITE_SCALE_BY_AGE_RANGE = {
+  baby: 1,
+  child: 3,
+  teenager: 4,
+  "young adult": 5,
+  adult: 5,
+  elderly: 5,
+} as const;
+
+export type NpcSpriteAgeRange = keyof typeof NPC_SPRITE_SCALE_BY_AGE_RANGE;
+
+/** Default / fallback scale when age range is missing or unknown. */
+export const NPC_SPRITE_SCALE = NPC_SPRITE_SCALE_BY_AGE_RANGE.adult;
+
+export function npcSpriteScale(ageRange?: string | null): number {
+  if (typeof ageRange !== "string" || !ageRange.trim()) {
+    return NPC_SPRITE_SCALE;
+  }
+  const normalized = ageRange.trim().toLowerCase().replaceAll("_", " ");
+  if (normalized in NPC_SPRITE_SCALE_BY_AGE_RANGE) {
+    return NPC_SPRITE_SCALE_BY_AGE_RANGE[
+      normalized as NpcSpriteAgeRange
+    ];
+  }
+  return NPC_SPRITE_SCALE;
+}
+
+export const STAND_TIME = { min: 6_000, max: 10_000 };
+/** Pixels down from the top of the scaled NPC sprite box to the tooltip anchor. */
+export const NPC_TOOLTIP_OFFSET = 50;
 
 export const COLLIDABLE_FURNITURE_ASSET_PATHS = [
   "/furniture1/bamboo-pot.png",
