@@ -1,3 +1,7 @@
+/*
+ * Screen for permanent loading screen; for UI testing.
+ */
+
 "use client";
 
 import { useEffect, useState } from "react";
