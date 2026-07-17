@@ -6,11 +6,19 @@ experience humanity. the only way to move forwards is to look back
 
 `/` auraful hero page
 
-`/home` your home base
+`/nexus` share discoveries with fellow cadets
+
+`/home` your ship
+
+`/sail` sail away to a new world
+
+## dev-features
 
 `/steer` plan voyages
 
-`/sail` sail away to a new world
+`/voyages` view voyages
+
+`/draw` create map layouts
 
 ## tech
 

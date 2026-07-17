@@ -4,7 +4,7 @@
 
 Define the UI before implementation and return concrete layout, states, interaction, and responsive guidance to the orchestrator and dev.
 
-Follow the `/` and `/home` language:
+Follow the `/` and `/ship` language:
 
 - near-black/dark backgrounds with off-white or white text;
 - Playfair Display for prominent headers and Manrope for body text; use Space Mono only for existing utility/label treatments;

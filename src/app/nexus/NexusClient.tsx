@@ -484,7 +484,7 @@ function NexusShell({
             )}
             {user.role === "student" ? (
               <Link
-                href="/home"
+                href="/ship"
                 onClick={() => setSidebarOpen(false)}
                 className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-white/48 transition motion-reduce:transition-none hover:bg-white/[0.045] hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
               >
