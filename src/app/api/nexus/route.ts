@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { errorResponse, jsonInput, parseJsonBody, requireDemoUser, requiredText } from "@/lib/learning/api";
+import { isTakeawayNoteContent, takeawayNoteBody } from "@/lib/learning/field-note-content";
 import {
   starstreamAttachmentsView,
   starstreamLogBody,
@@ -380,7 +381,7 @@ async function snapshot(userId: string) {
       });
       return assignment.journey ? [{ id: assignment.id, ...details, kind: "journey" as const, journeyId: assignment.journey.id, assignedTo: assignee, state: "in-progress" as const, progress: Math.round(voyageAssignments.reduce((sum, item) => sum + item.progress, 0) / Math.max(1, voyageAssignments.length)), due: "Friday" }, ...voyageAssignments] : voyageAssignments;
     }),
-    fieldNotes: fieldNotes.map((note) => ({ id: note.id, voyageId: note.storyId, authorId: note.author.username, authorName: note.authorName ?? note.author.displayName, authorType: note.authorType, sources: Array.isArray(note.sources) ? note.sources.filter((source): source is string => typeof source === "string") : [], body: typeof note.content === "object" && note.content && "body" in note.content ? String((note.content as { body?: unknown }).body ?? "") : JSON.stringify(note.content), status: note.status === "published" ? "published" as const : "draft" as const, createdAt: note.createdAt.toISOString() })),
+    fieldNotes: fieldNotes.map((note) => ({ id: note.id, voyageId: note.storyId, authorId: note.author.username, authorName: note.authorName ?? note.author.displayName, authorType: note.authorType, sources: Array.isArray(note.sources) ? note.sources.filter((source): source is string => typeof source === "string") : [], body: takeawayNoteBody(note.content).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), status: note.status === "published" ? "published" as const : "draft" as const, createdAt: note.createdAt.toISOString() })),
     starstreamLogs: starstreamRoots.map((log) => mapStarstreamLog(log, userId)),
     classroom: classroom
       ? (() => {
@@ -465,10 +466,11 @@ export async function POST(request: Request) {
       });
       if (!assignment) throw new Error("Voyage assignment not found.");
       const status = action === "publish-field-note" ? "published" as const : "draft" as const;
-      const existing = await prisma.fieldNote.findFirst({
+      const candidates = await prisma.fieldNote.findMany({
         where: { assignmentId: assignment.id, storyId: voyageId, authorId: user.id, authorType: "user" },
         orderBy: { updatedAt: "desc" },
       });
+      const existing = candidates.find((note) => isTakeawayNoteContent(note.content));
       if (existing) {
         const note = await prisma.fieldNote.update({
           where: { id: existing.id },

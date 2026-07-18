@@ -37,13 +37,50 @@ type Run = {
   } | null;
 };
 
+type VoyageFilter = "all" | "done";
+
+const STATUS_FILTER_STORAGE_KEY = "sapiens:voyages:status-filter";
+
+const VOYAGE_FILTERS: { id: VoyageFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "done", label: "Done" },
+];
+
+function isVoyageFilter(value: string | null): value is VoyageFilter {
+  return value === "all" || value === "done";
+}
+
+function readStoredStatusFilter(): VoyageFilter {
+  try {
+    const stored = window.localStorage.getItem(STATUS_FILTER_STORAGE_KEY);
+    if (isVoyageFilter(stored)) return stored;
+  } catch {
+    // Ignore storage failures such as private-browsing restrictions.
+  }
+  return "all";
+}
+
+function isDoneVoyage(run: Run) {
+  return run.status === "succeed" && Boolean(run.story);
+}
+
 function date(value: string | null) {
   return value ? new Date(value).toLocaleString() : "In progress";
+}
+
+function pillClass(selected: boolean) {
+  return `min-h-8 rounded-full border px-3.5 font-mono text-[10px] uppercase tracking-[0.14em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 ${
+    selected
+      ? "border-cyan-200/35 bg-cyan-200/15 text-cyan-50"
+      : "border-white/12 bg-white/[0.03] text-white/45 hover:border-white/20 hover:text-white/70"
+  }`;
 }
 
 export default function VoyagesClient() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<VoyageFilter>("all");
+  const [statusFilterReady, setStatusFilterReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedStar, setSelectedStar] = useState<Run["starCharacter"]>(null);
@@ -53,6 +90,20 @@ export default function VoyagesClient() {
     top: number;
     above: boolean;
   } | null>(null);
+
+  useEffect(() => {
+    setStatusFilter(readStoredStatusFilter());
+    setStatusFilterReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!statusFilterReady) return;
+    try {
+      window.localStorage.setItem(STATUS_FILTER_STORAGE_KEY, statusFilter);
+    } catch {
+      // Ignore storage failures such as private-browsing quota restrictions.
+    }
+  }, [statusFilter, statusFilterReady]);
 
   useEffect(() => {
     fetch("/api/voyages")
@@ -75,6 +126,7 @@ export default function VoyagesClient() {
   }, []);
 
   const filtered = runs.filter((run) => {
+    if (statusFilter === "done" && !isDoneVoyage(run)) return false;
     const text =
       `${run.steering ?? ""} ${run.topic ?? ""} ${run.story?.topic ?? ""}`.toLowerCase();
     return !query.trim() || text.includes(query.trim().toLowerCase());
@@ -124,7 +176,28 @@ export default function VoyagesClient() {
         </div>
 
         <section className="rounded-2xl border border-white/10 bg-black/30 p-4 shadow-2xl shadow-cyan-950/20 backdrop-blur-md">
-          <div className="mb-4 flex flex-wrap gap-3">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <div
+              role="tablist"
+              aria-label="Filter voyages by status"
+              className="flex flex-wrap gap-2"
+            >
+              {VOYAGE_FILTERS.map((filter) => {
+                const selected = statusFilter === filter.id;
+                return (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setStatusFilter(filter.id)}
+                    className={pillClass(selected)}
+                  >
+                    {filter.label}
+                  </button>
+                );
+              })}
+            </div>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}

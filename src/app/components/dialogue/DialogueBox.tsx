@@ -67,6 +67,8 @@ type DialogueBoxProps = {
   onRestart: () => void;
   /** Body text size. Default `lg`. */
   size?: DialogueBoxSize;
+  /** When false, choice prompts appear instantly (no typewriter). Default true. */
+  typingEnabled?: boolean;
   onTypingChange?: (done: boolean) => void;
   editableChoice?: DialogueEditableChoice;
   dropdownChoice?: DialogueDropdownChoice;
@@ -90,6 +92,7 @@ export function DialogueBox({
   onChoose,
   onRestart,
   size = "lg",
+  typingEnabled = true,
   onTypingChange,
   editableChoice,
   dropdownChoice,
@@ -123,6 +126,8 @@ export function DialogueBox({
         size={size}
         onChoose={onChoose}
         typingGateRef={typingGateRef}
+        typingEnabled={typingEnabled}
+        onTypingChange={onTypingChange}
         editableChoice={editableChoice}
         dropdownChoice={dropdownChoice}
       />
@@ -248,6 +253,8 @@ function ChoiceBeat({
   choices,
   onChoose,
   typingGateRef,
+  typingEnabled = true,
+  onTypingChange,
   theme,
   size,
   editableChoice,
@@ -257,14 +264,19 @@ function ChoiceBeat({
   choices: Array<{ index: number; label: string }>;
   onChoose: (index: number) => void;
   typingGateRef: TypingGateRef;
+  typingEnabled?: boolean;
+  onTypingChange?: (done: boolean) => void;
   theme: DialogueTheme;
   size: DialogueBoxSize;
   editableChoice?: DialogueEditableChoice;
   dropdownChoice?: DialogueDropdownChoice;
 }) {
   const promptText = prompt ?? "What do you do?";
-  const { displayed, done, skip } = useTypewriter(promptText);
+  const { displayed, done, skip } = useTypewriter(promptText, typingEnabled);
   useTypingGate(typingGateRef, done, skip);
+  useEffect(() => {
+    onTypingChange?.(done);
+  }, [done, onTypingChange]);
   const listRef = useRef<HTMLUListElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const choicesKey = choices.map((choice) => choice.index).join(",");
@@ -355,12 +367,8 @@ function ChoiceBeat({
     }
 
     if (event.key === "Tab") {
-      const total = choices.length + (hasComplexChoice ? 1 : 0);
-      const next = activeIndex + (event.shiftKey ? -1 : 1);
-      if (next >= 0 && next < total) {
-        event.preventDefault();
-        focusChoice(next);
-      }
+      event.preventDefault();
+      focusChoice(activeIndex + (event.shiftKey ? -1 : 1));
       return;
     }
     if (event.key === "ArrowDown" || event.key === "ArrowRight") {

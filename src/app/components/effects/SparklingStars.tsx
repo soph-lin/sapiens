@@ -26,9 +26,15 @@ type ShootingStar = {
   alpha: number;
 };
 
+type Props = {
+  /** Fill a parent instead of the viewport (for section backgrounds). */
+  contained?: boolean;
+};
+
 /** A quiet, low-contrast starfield for dark route shells. */
-export default function SparklingStars() {
+export default function SparklingStars({ contained = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -50,9 +56,12 @@ export default function SparklingStars() {
     const startedAt = performance.now();
 
     const seedStars = () => {
+      const density = contained ? 4200 : 1050;
+      const floor = contained ? 80 : 280;
+      const cap = contained ? 220 : MAX_STARS;
       const count = Math.min(
-        MAX_STARS,
-        Math.max(280, Math.floor((width * height) / 1050)),
+        cap,
+        Math.max(floor, Math.floor((width * height) / density)),
       );
       stars = Array.from({ length: count }, () => ({
         x: Math.random() * width,
@@ -93,8 +102,15 @@ export default function SparklingStars() {
 
     const resize = () => {
       devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-      width = window.innerWidth;
-      height = window.innerHeight;
+      if (contained) {
+        const root = rootRef.current;
+        const rect = root?.getBoundingClientRect();
+        width = Math.max(1, Math.floor(rect?.width ?? 0));
+        height = Math.max(1, Math.floor(rect?.height ?? 0));
+      } else {
+        width = window.innerWidth;
+        height = window.innerHeight;
+      }
       canvas.width = Math.floor(width * devicePixelRatio);
       canvas.height = Math.floor(height * devicePixelRatio);
       canvas.style.width = `${width}px`;
@@ -161,7 +177,8 @@ export default function SparklingStars() {
         for (const shootingStar of shootingStars) {
           const progress =
             (now - shootingStar.bornAt) / shootingStar.duration;
-          const distance = shootingStar.speed * (now - shootingStar.bornAt) / 1000;
+          const distance =
+            (shootingStar.speed * (now - shootingStar.bornAt)) / 1000;
           const headX =
             shootingStar.startX + Math.cos(shootingStar.angle) * distance;
           const headY =
@@ -206,19 +223,38 @@ export default function SparklingStars() {
     resize();
     scheduleNextShootingStar(startedAt);
     animationFrame = requestAnimationFrame(draw);
-    window.addEventListener("resize", resize);
+
+    const ro =
+      contained && rootRef.current
+        ? new ResizeObserver(resize)
+        : null;
+    if (ro && rootRef.current) ro.observe(rootRef.current);
+    if (!contained) window.addEventListener("resize", resize);
 
     return () => {
       cancelAnimationFrame(animationFrame);
-      window.removeEventListener("resize", resize);
+      ro?.disconnect();
+      if (!contained) window.removeEventListener("resize", resize);
     };
-  }, []);
+  }, [contained]);
 
-  return (
+  const canvas = (
     <canvas
       ref={canvasRef}
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 z-0 h-full w-full"
+      className={
+        contained
+          ? "pointer-events-none absolute inset-0 h-full w-full"
+          : "pointer-events-none fixed inset-0 z-0 h-full w-full"
+      }
     />
+  );
+
+  if (!contained) return canvas;
+
+  return (
+    <div ref={rootRef} className="pointer-events-none absolute inset-0 z-0">
+      {canvas}
+    </div>
   );
 }

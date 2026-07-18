@@ -37,6 +37,8 @@ type StoryDialogueProps = {
   characters?: Array<{ name: string; assetUrl?: string }>;
   collectible?: { name: string; assetUrl?: string };
   report?: StoryReport;
+  /** DB story id for persisting private FieldNotes while sailing. */
+  storyId?: string;
   /**
    * Class-share takeaway at voyage end: assigned voyages (required) or solo
    * voyages when the cadet belongs to a classroom (optional, below report).
@@ -66,10 +68,12 @@ export function StoryDialogue({
   characters = [],
   collectible,
   report,
+  storyId,
   classShare,
 }: StoryDialogueProps) {
   const theme = THEMES[themeId];
   const [collectibleDismissed, setCollectibleDismissed] = useState(false);
+  const [cocoOpen, setCocoOpen] = useState(false);
   const completionAttempted = useRef<string | null>(null);
   const {
     view,
@@ -160,6 +164,7 @@ export function StoryDialogue({
           view={view}
           revealKey={revealKey}
           typingGateRef={typingGateRef}
+          keyboardEnabled={!cocoOpen}
           onAdvance={advance}
           onChoose={choose}
           onRestart={restart}
@@ -170,9 +175,12 @@ export function StoryDialogue({
 
       <FieldCompanion
         topic={title}
+        storyId={storyId ?? classShare?.storyId}
+        assignmentId={classShare?.assignmentId}
         dialoguePoint={dialoguePoint}
         dialogueHistory={dialogueHistory}
         speaker={dialogueSpeaker}
+        onCocoOpenChange={setCocoOpen}
       />
 
       {view.kind === "end" && report ? (

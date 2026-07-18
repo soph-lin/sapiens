@@ -367,6 +367,17 @@ body:has(.home-2d-screen) {
   }
 }
 
+@keyframes voyage-fade {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes loading-screen-bar {
   0% {
     transform: translateX(-140%);
@@ -399,6 +410,10 @@ body:has(.home-2d-screen) {
   }
 
   .choice-cascade-item {
+    animation: none;
+  }
+
+  .animate-\[voyage-fade_520ms_ease-out\] {
     animation: none;
   }
 }

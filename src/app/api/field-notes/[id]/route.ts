@@ -31,7 +31,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     });
     if (!note) throw new ApiError(404, "Field note not found.");
     if (note.authorId !== user.id) throw new ApiError(403, "Only the note author can edit it.");
-    if (user.role !== "student") throw new ApiError(403, "Only cadets can publish field notes.");
 
     const body = parseJsonBody<NoteBody>(await request.json());
 
@@ -98,5 +97,28 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ note: updated });
   } catch (error) {
     return errorResponse(error, "Could not update field note.");
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const user = await requireDemoUser(request);
+    const { id } = await params;
+    const note = await prisma.fieldNote.findUnique({
+      where: { id },
+      select: { id: true, authorId: true },
+    });
+    if (!note) throw new ApiError(404, "Field note not found.");
+    if (note.authorId !== user.id) {
+      throw new ApiError(403, "Only the note author can delete it.");
+    }
+    await prisma.starstreamLog.deleteMany({ where: { fieldNoteId: id } });
+    await prisma.fieldNote.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return errorResponse(error, "Could not delete field note.");
   }
 }

@@ -52,6 +52,7 @@ enum ClassroomSourceMode {
 enum FieldNoteAuthorType {
   user
   bot
+  coco
 }
 
 enum StarstreamLogType {

@@ -556,7 +556,10 @@ export function PixelWaveHero() {
 
     let raf = 0;
     let w = 0;
+    /** Full canvas height (may span multiple sections). */
     let h = 0;
+    /** First-viewport stage height — ship/waves/forms stay framed here. */
+    let stageH = 0;
     let dpr = 1;
     let field: Particle[] = [];
     let waves: WavePoint[] = [];
@@ -569,6 +572,7 @@ export function PixelWaveHero() {
     };
     let formDots: { x: number; y: number; shade: number; size: number }[] = [];
     const started = performance.now();
+    const parent = canvas.parentElement;
 
     // Cycle: hold phase → morph to next → hold → …
     type Seg = "hold" | "morph";
@@ -577,10 +581,20 @@ export function PixelWaveHero() {
     let phase: Phase = "ship";
     let fromPhase: Phase = "ship";
 
+    const sceneScale = () => Math.min(w, stageH);
+
     const resize = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
-      w = window.innerWidth;
-      h = window.innerHeight;
+      w = parent?.clientWidth || window.innerWidth;
+      // Prefer full document height so the atmosphere isn't clipped to one viewport
+      const pageH = Math.max(
+        parent?.clientHeight || 0,
+        document.documentElement.scrollHeight,
+        document.body?.scrollHeight || 0,
+        window.innerHeight,
+      );
+      h = pageH;
+      stageH = window.innerHeight;
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
       canvas.style.width = `${w}px`;
@@ -592,14 +606,26 @@ export function PixelWaveHero() {
     };
 
     const seedField = () => {
-      const density = Math.min(900, Math.floor((w * h) / 1400));
+      const density = Math.min(700, Math.floor((w * h) / 3200));
       field = [];
       for (let i = 0; i < density; i++) {
+        // Spread dust across all three viewports (hero → meaning → voyage)
+        const band = Math.random();
+        let homeY: number;
+        if (band < 0.38) {
+          homeY = Math.random() * stageH * 0.7;
+        } else if (band < 0.68) {
+          homeY = stageH * 0.55 + Math.random() * stageH * 0.95;
+        } else {
+          homeY =
+            stageH * 1.6 +
+            Math.random() * Math.max(stageH * 1.2, h - stageH * 1.6);
+        }
         field.push({
           x: Math.random() * w,
-          y: Math.random() * h,
+          y: homeY,
           homeX: Math.random() * w,
-          homeY: Math.random() * h * 0.45,
+          homeY,
           shade: 0.15 + Math.random() * 0.45,
           size: Math.random() < 0.9 ? 1 : 1.4,
           phase: Math.random() * Math.PI * 2,
@@ -612,7 +638,8 @@ export function PixelWaveHero() {
     const seedWaves = () => {
       waves = [];
       const cols = Math.max(48, Math.floor(w / 14));
-      const rows = 42;
+      const pageMul = Math.max(1, h / Math.max(stageH, 1));
+      const rows = Math.min(72, Math.floor(42 * (0.85 + pageMul * 0.35)));
       for (let row = 0; row < rows; row++) {
         const depth = row / (rows - 1);
         const rowCols = Math.floor(cols * (0.45 + depth * 0.7));
@@ -636,7 +663,7 @@ export function PixelWaveHero() {
       const src = SHAPES[phase];
       const count = Math.max(src.length, Math.floor(src.length * density));
       const out: Vec2[] = [];
-      const scale = Math.min(w, h) * 0.55;
+      const scale = sceneScale() * 0.55;
       for (let i = 0; i < count; i++) {
         const p = src[i % src.length];
         const jitter = i >= src.length ? (Math.random() - 0.5) * 2.8 : 0;
@@ -651,7 +678,7 @@ export function PixelWaveHero() {
     /** Pad a dense shape to the morph pool size with micro-offsets (not coarse repeats). */
     const padShape = (src: Vec2[], target: number) => {
       const out = src.map((p) => ({ ...p }));
-      const scale = Math.min(w, h) * 0.55;
+      const scale = sceneScale() * 0.55;
       let i = 0;
       while (out.length < target) {
         const p = src[i % src.length];
@@ -691,7 +718,7 @@ export function PixelWaveHero() {
       for (let i = 0; i < pool; i++) {
         formDots.push({
           x: w * 0.5,
-          y: h * 0.5,
+          y: stageH * 0.5,
           shade: 0.55 + (i % 7) * 0.06,
           // keep dots tiny so dense stars read sharp, not chunky
           size: i % 11 === 0 ? 1.35 : 1,
@@ -718,8 +745,9 @@ export function PixelWaveHero() {
 
     const projectWave = (nx: number, depth: number, t: number) => {
       const { elev, slope, crest } = sea(nx, depth, t);
-      const vanishY = h * 0.38;
-      const nearY = h * 0.92;
+      const vanishY = stageH * 0.38;
+      // Carry the sea through the full page height so it isn't cut at the fold
+      const nearY = Math.max(stageH * 0.92, h * 0.94);
       const yPersp = vanishY + (nearY - vanishY) * Math.pow(depth, 1.35);
       const edgePull = (1 - depth) * 0.08;
       const x = w * (edgePull * 0.5 + nx * (1 - edgePull));
@@ -737,9 +765,9 @@ export function PixelWaveHero() {
     };
 
     const shipScreen = (t: number, i: number) => {
-      const scale = Math.min(w, h) * 0.55;
+      const scale = sceneScale() * 0.55;
       const cx = w * 0.5;
-      const cy = h * 0.52;
+      const cy = stageH * 0.52;
       const bob = reduceMotion ? { y: 0, tilt: 0 } : shipBob(t);
       const cos = Math.cos(bob.tilt);
       const sin = Math.sin(bob.tilt);
@@ -754,9 +782,9 @@ export function PixelWaveHero() {
     };
 
     const starsScreen = (t: number, i: number) => {
-      const scale = Math.min(w, h) * 0.52;
+      const scale = sceneScale() * 0.52;
       const cx = w * 0.5;
-      const cy = h * 0.48;
+      const cy = stageH * 0.48;
       const p = locals.stars[i % locals.stars.length];
       const drift = reduceMotion ? 0 : Math.sin(t * 0.35 + i * 0.17) * 2.5;
       return {
@@ -768,9 +796,9 @@ export function PixelWaveHero() {
 
     /** Merry-go-round: yaw whole structure, bob horses on poles */
     const carouselScreen = (t: number, i: number) => {
-      const scale = Math.min(w, h) * 0.82;
+      const scale = sceneScale() * 0.82;
       const cx = w * 0.5;
-      const cy = h * 0.5;
+      const cy = stageH * 0.5;
       const pt = CAROUSEL_MESH[i % CAROUSEL_MESH.length];
       const yaw = reduceMotion ? 0.35 : t * 0.42;
       const cos = Math.cos(yaw);
@@ -801,9 +829,9 @@ export function PixelWaveHero() {
 
     /** Flat XY spin — no tilt/perspective wobble; soft radial water ripple */
     const flowersScreen = (t: number, i: number) => {
-      const scale = Math.min(w, h) * 1.15;
+      const scale = sceneScale() * 1.15;
       const cx = w * 0.5;
-      const cy = h * 0.52;
+      const cy = stageH * 0.52;
       const pt = FLOWER_MESH[i % FLOWER_MESH.length];
       const yaw = reduceMotion ? 0.4 : t * 0.28;
       const cos = Math.cos(yaw);
@@ -834,9 +862,9 @@ export function PixelWaveHero() {
     /** Expanding concentric water rings around the lily */
     const drawFlowerRipples = (t: number, alphaMul: number) => {
       if (alphaMul < 0.02 || reduceMotion) return;
-      const scale = Math.min(w, h) * 1.15;
+      const scale = sceneScale() * 1.15;
       const cx = w * 0.5;
-      const cy = h * 0.52;
+      const cy = stageH * 0.52;
       const ringCount = 5;
       for (let n = 0; n < ringCount; n++) {
         const phase = (t * 0.42 + n / ringCount) % 1;
@@ -857,9 +885,9 @@ export function PixelWaveHero() {
 
     /** Peony shells: true radial expand + lagging trails + glitter */
     const fireworksScreen = (t: number, i: number) => {
-      const scale = Math.min(w, h) * 1.05;
+      const scale = sceneScale() * 1.05;
       const cx = w * 0.5;
-      const cy = h * 0.56;
+      const cy = stageH * 0.56;
       const spark = FIREWORK_SPARKS[i % FIREWORK_SPARKS.length];
       const burst = FW_BURSTS[spark.burst];
       const cycle = reduceMotion ? FW_CYCLE * 0.4 : FW_CYCLE;
@@ -974,50 +1002,90 @@ export function PixelWaveHero() {
     };
 
     const drawGradients = () => {
-      ctx.fillStyle = "#000000";
-      ctx.fillRect(0, 0, w, h);
-
-      const horizon = ctx.createLinearGradient(0, h * 0.3, 0, h);
-      horizon.addColorStop(0, "rgba(0,0,0,0)");
-      horizon.addColorStop(0.45, "rgba(18, 32, 40, 0.4)");
-      horizon.addColorStop(0.75, "rgba(28, 48, 52, 0.55)");
-      horizon.addColorStop(1, "rgba(8, 14, 18, 0.7)");
-      ctx.fillStyle = horizon;
+      // Black → same cool dark green as section 1/2 (rgb 24,78,72 family)
+      const base = ctx.createLinearGradient(0, 0, 0, h);
+      base.addColorStop(0, "#000000");
+      base.addColorStop(0.5, "#020303");
+      base.addColorStop(0.56, "#030504");
+      base.addColorStop(0.62, "#040706");
+      base.addColorStop(0.8, "#050908");
+      base.addColorStop(1, "#060a09");
+      ctx.fillStyle = base;
       ctx.fillRect(0, 0, w, h);
 
       const teal = ctx.createRadialGradient(
         w * 0.2,
-        h * 0.55,
+        stageH * 0.55,
         0,
         w * 0.2,
-        h * 0.55,
+        stageH * 0.55,
         w * 0.6,
       );
-      teal.addColorStop(0, "rgba(24, 78, 72, 0.22)");
+      teal.addColorStop(0, "rgba(24, 78, 72, 0.28)");
       teal.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = teal;
       ctx.fillRect(0, 0, w, h);
 
+      const tealMid = ctx.createRadialGradient(
+        w * 0.35,
+        stageH * 1.2,
+        0,
+        w * 0.35,
+        stageH * 1.2,
+        w * 0.75,
+      );
+      tealMid.addColorStop(0, "rgba(24, 78, 72, 0.3)");
+      tealMid.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = tealMid;
+      ctx.fillRect(0, 0, w, h);
+
+      const voyageLift = ctx.createRadialGradient(
+        w * 0.48,
+        stageH * 2.35,
+        0,
+        w * 0.48,
+        stageH * 2.35,
+        Math.max(w, stageH) * 0.9,
+      );
+      voyageLift.addColorStop(0, "rgba(24, 78, 72, 0.08)");
+      voyageLift.addColorStop(0.45, "rgba(18, 52, 48, 0.04)");
+      voyageLift.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = voyageLift;
+      ctx.fillRect(0, 0, w, h);
+
       const steel = ctx.createRadialGradient(
         w * 0.8,
-        h * 0.4,
+        stageH * 0.4,
         0,
         w * 0.8,
-        h * 0.4,
+        stageH * 0.4,
         w * 0.55,
       );
-      steel.addColorStop(0, "rgba(36, 52, 78, 0.2)");
+      steel.addColorStop(0, "rgba(36, 52, 78, 0.14)");
       steel.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = steel;
       ctx.fillRect(0, 0, w, h);
 
+      const greenDeep = ctx.createRadialGradient(
+        w * 0.72,
+        stageH * 2.15,
+        0,
+        w * 0.72,
+        stageH * 2.15,
+        w * 0.7,
+      );
+      greenDeep.addColorStop(0, "rgba(20, 64, 58, 0.06)");
+      greenDeep.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = greenDeep;
+      ctx.fillRect(0, 0, w, h);
+
       const center = ctx.createRadialGradient(
         w * 0.5,
-        h * 0.42,
+        stageH * 0.42,
         0,
         w * 0.5,
-        h * 0.42,
-        Math.min(w, h) * 0.42,
+        stageH * 0.42,
+        sceneScale() * 0.42,
       );
       center.addColorStop(0, "rgba(255, 248, 235, 0.05)");
       center.addColorStop(1, "rgba(0,0,0,0)");
@@ -1057,6 +1125,8 @@ export function PixelWaveHero() {
 
     const drawWaves = (t: number, alphaMul: number) => {
       if (alphaMul < 0.01) return;
+      const foldStart = stageH * 0.52;
+      const foldSpan = Math.max(1, h - foldStart);
       for (let i = 0; i < waves.length; i++) {
         const wp = waves[i];
         const { x, y, slope, crest, depth } = projectWave(
@@ -1065,12 +1135,17 @@ export function PixelWaveHero() {
           reduceMotion ? 0 : t,
         );
 
+        // Soften past mid-stage so the sea blends into the meaning section
+        const pastFold = Math.max(0, Math.min(1, (y - foldStart) / foldSpan));
+        const foldFade = 1 - pastFold * 0.88;
+
         const lit = 0.35 + slope * 0.35 + Math.max(0, crest) * 0.2;
         const depthFade = 0.2 + depth * 0.75;
         const alpha = Math.min(
           0.95,
-          wp.shade * lit * depthFade * 0.85 * alphaMul,
+          wp.shade * lit * depthFade * 0.85 * alphaMul * foldFade,
         );
+        if (alpha < 0.02) continue;
         const base = 160 + lit * 70 + depth * 20;
         const g = Math.floor(Math.min(255, base));
         const r = Math.floor(g * (crest > 0.2 ? 1 : 0.88));
@@ -1079,8 +1154,8 @@ export function PixelWaveHero() {
         const s = wp.size * (0.7 + depth * 0.8);
         ctx.fillRect(x, y, s, s);
 
-        if (crest > 0.65 && depth > 0.4 && wp.shade > 0.6) {
-          ctx.fillStyle = `rgba(255,255,255,${(0.35 + depth * 0.35) * alphaMul})`;
+        if (crest > 0.65 && depth > 0.4 && wp.shade > 0.6 && foldFade > 0.45) {
+          ctx.fillStyle = `rgba(255,255,255,${(0.35 + depth * 0.35) * alphaMul * foldFade})`;
           ctx.fillRect(x, y - s * 0.6, s * 0.8, s * 0.8);
         }
       }
@@ -1229,10 +1304,13 @@ export function PixelWaveHero() {
     resize();
     raf = requestAnimationFrame(frame);
     window.addEventListener("resize", resize);
+    const ro = parent ? new ResizeObserver(resize) : null;
+    if (parent && ro) ro.observe(parent);
 
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
+      ro?.disconnect();
     };
   }, []);
 

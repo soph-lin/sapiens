@@ -43,10 +43,33 @@ export default function IndexStartCue() {
 
   useEffect(() => {
     if (mode !== "choose") return;
+
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setMode("hint");
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== "choose") return;
     firstChoiceRef.current?.focus();
   }, [mode]);
 
   function handleChoiceKeyDown(event: ReactKeyboardEvent<HTMLAnchorElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setMode("hint");
+      event.currentTarget.blur();
+      return;
+    }
+
     if (event.key === " " || event.key === "Enter") {
       event.preventDefault();
       event.currentTarget.click();

@@ -1,31 +1,70 @@
 "use client";
 
-import { History as HistoryIcon, NotebookPen, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  History as HistoryIcon,
+  NotebookPen,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Coco } from "@/app/components/coco";
 import { DialoguePanel } from "@/app/components/dialogue/DialoguePanel";
 import { useUser } from "@/app/components/user/UserProvider";
 import type { DialogueHistoryEntry, Presentable } from "@/lib/dialogue";
+import { formatRelativeTime } from "@/lib/util/format-relative-time";
+import {
+  isPrivateNoteContent,
+  privateNoteContent,
+} from "@/lib/learning/field-note-content";
+import CocoIcon from "@/app/components/icons/CocoIcon";
 import NotesEditor from "./NotesEditor";
 
 type PaneId = "notes" | "coco";
 type FieldCompanionProps = {
   topic: string;
+  /** Persisted FieldNote.storyId when sailing a DB voyage. */
+  storyId?: string;
+  /** Assigned classroom voyage; omit for solo. */
+  assignmentId?: string;
   dialoguePoint: string;
   dialogueHistory: DialogueHistoryEntry[];
   speaker?: string;
+  /** Fires when Coco overlay opens/closes so the story can release Space/Enter. */
+  onCocoOpenChange?: (open: boolean) => void;
+};
+
+type PrivateFieldNote = {
+  id: string;
+  content: string;
+  heading: string;
+  createdAt: string;
+  authorType?: string | null;
+};
+
+type PendingNavigation = { kind: "select"; noteId: string } | { kind: "close" };
+
+type FieldNotePayload = {
+  id: string;
+  authorId: string;
+  authorType?: string | null;
+  title?: string | null;
+  content: unknown;
+  createdAt: string;
 };
 
 type CocoHistoryEntry = {
   question: string;
   answer: string;
   citations?: Array<{ url: string; title?: string }>;
+  sources?: string[];
 };
 
 const DEFAULT_NOTE = "<p></p>";
 export const COCO_GREETING_LINES = [
-  "Hey there! It's your buddy, COCO! What are you curious about?",
-  "Hiya, it's COCO! Ready to explore this moment together?",
+  "Hey there! It's your buddy, Coco! What are you curious about?",
+  "Hiya, it's Coco! Ready to explore this moment together?",
   "Ahoy there, explorer! Ask me anything about what you just saw.",
   "Shoot away! I'm all ears.",
 ] as const;
@@ -51,13 +90,24 @@ export const COCO_THINKING_LINES = [
 
 export function FieldCompanion({
   topic,
+  storyId,
+  assignmentId,
   dialoguePoint,
   dialogueHistory,
   speaker,
+  onCocoOpenChange,
 }: FieldCompanionProps) {
   const [activePane, setActivePane] = useState<PaneId | null>(null);
-  const [notesDraft, setNotesDraft] = useState(DEFAULT_NOTE);
-  const [savedNotes, setSavedNotes] = useState(DEFAULT_NOTE);
+  const notesCloseGuardRef = useRef<(() => boolean) | null>(null);
+  /** Coco: return false to keep the overlay open (e.g. paging an answer). */
+  const cocoEscapeGuardRef = useRef<(() => boolean) | null>(null);
+
+  useEffect(() => {
+    onCocoOpenChange?.(activePane === "coco");
+    return () => {
+      onCocoOpenChange?.(false);
+    };
+  }, [activePane, onCocoOpenChange]);
 
   useEffect(() => {
     if (!activePane) return;
@@ -65,6 +115,12 @@ export function FieldCompanion({
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
+      if (activePane === "notes" && notesCloseGuardRef.current?.() === false) {
+        return;
+      }
+      if (activePane === "coco" && cocoEscapeGuardRef.current?.() === false) {
+        return;
+      }
       setActivePane(null);
     };
     window.addEventListener("keydown", onKeyDown, true);
@@ -96,8 +152,28 @@ export function FieldCompanion({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
+  const requestCloseNotes = () => {
+    if (notesCloseGuardRef.current?.() === false) return;
+    setActivePane(null);
+  };
+
   const togglePane = (pane: PaneId) => {
-    setActivePane((current) => (current === pane ? null : pane));
+    setActivePane((current) => {
+      if (current === pane) {
+        if (pane === "notes" && notesCloseGuardRef.current?.() === false) {
+          return current;
+        }
+        return null;
+      }
+      if (
+        current === "notes" &&
+        pane !== "notes" &&
+        notesCloseGuardRef.current?.() === false
+      ) {
+        return current;
+      }
+      return pane;
+    });
   };
 
   return (
@@ -119,7 +195,7 @@ export function FieldCompanion({
           onClick={() => togglePane("coco")}
           className="font-display text-[16px] leading-none tracking-[-0.08em]"
         >
-          ᗧ・ꈊ・ᗤ
+          <CocoIcon size={30} />
         </CompanionButton>
       </div>
 
@@ -134,18 +210,20 @@ export function FieldCompanion({
                     backdropFilter: "blur(12px)",
                     WebkitBackdropFilter: "blur(12px)",
                   }
-                : { backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)" }
+                : {
+                    backdropFilter: "blur(2px)",
+                    WebkitBackdropFilter: "blur(2px)",
+                  }
             }
           />
           {activePane === "notes" ? (
             <aside className="fixed inset-y-3 right-3 z-50 flex w-[min(460px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[1.4rem] border border-[#e2d9ce] bg-[#faf8f4] text-[#29241f] shadow-[0_24px_80px_rgba(48,36,24,0.18)] sm:inset-y-5">
               <NotesPane
                 topic={topic}
-                draft={notesDraft}
-                saved={savedNotes}
-                onDraftChange={setNotesDraft}
-                onSave={() => setSavedNotes(notesDraft)}
-                onClose={() => setActivePane(null)}
+                storyId={storyId}
+                assignmentId={assignmentId}
+                onClose={requestCloseNotes}
+                closeGuardRef={notesCloseGuardRef}
               />
             </aside>
           ) : null}
@@ -154,9 +232,12 @@ export function FieldCompanion({
       <CocoStage
         visible={activePane === "coco"}
         topic={topic}
+        storyId={storyId}
+        assignmentId={assignmentId}
         dialoguePoint={dialoguePoint}
         dialogueHistory={dialogueHistory}
         speaker={speaker}
+        escapeGuardRef={cocoEscapeGuardRef}
         onClose={() => setActivePane(null)}
       />
     </>
@@ -241,57 +322,564 @@ function PaneHeader({
 
 function NotesPane({
   topic,
-  draft,
-  saved,
-  onDraftChange,
-  onSave,
+  storyId,
+  assignmentId,
   onClose,
+  closeGuardRef,
 }: {
   topic: string;
-  draft: string;
-  saved: string;
-  onDraftChange: (html: string) => void;
-  onSave: () => void;
+  storyId?: string;
+  assignmentId?: string;
   onClose: () => void;
+  closeGuardRef: React.MutableRefObject<(() => boolean) | null>;
 }) {
-  const hasChanges = draft !== saved;
   const { user } = useUser();
+  const canPersist = Boolean(storyId) && Boolean(user);
+  const [notes, setNotes] = useState<PrivateFieldNote[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [draft, setDraft] = useState(DEFAULT_NOTE);
+  const [baseline, setBaseline] = useState(DEFAULT_NOTE);
+  const [editorKey, setEditorKey] = useState(0);
+  const [pending, setPending] = useState<PendingNavigation | null>(null);
+  const [now, setNow] = useState(() => new Date());
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const ignoreEditorChangeRef = useRef(false);
+  const draftRef = useRef(draft);
+  const baselineRef = useRef(baseline);
+  const activeIdRef = useRef(activeId);
+
+  draftRef.current = draft;
+  baselineRef.current = baseline;
+  activeIdRef.current = activeId;
+
+  const isCreatingNew = activeId === null;
+  const hasChanges = draft !== baseline;
+  const canSaveNew =
+    canPersist && isCreatingNew && hasChanges && !isEmptyNote(draft) && !saving;
   const ownerLabel = user
     ? `${formatPossessive(user.displayName)} Field Notes`
     : "Your Field Notes";
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setNotes([]);
+      setLoadState("ready");
+      setLoadError(null);
+      return;
+    }
+    if (!storyId) {
+      setNotes([]);
+      setLoadState("ready");
+      setLoadError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const load = async () => {
+      setLoadState("loading");
+      setLoadError(null);
+      try {
+        const params = new URLSearchParams({ storyId });
+        if (assignmentId) params.set("assignmentId", assignmentId);
+        const response = await fetch(`/api/field-notes?${params}`, {
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as {
+          notes?: FieldNotePayload[];
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Could not load field notes.");
+        }
+        if (cancelled) return;
+        const next = (payload.notes ?? [])
+          .filter(
+            (note) =>
+              note.authorId === user.id &&
+              (note.authorType === "user" ||
+                note.authorType === "coco" ||
+                note.authorType == null) &&
+              isPrivateNoteContent(note.content),
+          )
+          .map(toPrivateFieldNote);
+        setNotes(next);
+        setLoadState("ready");
+      } catch (error) {
+        if (cancelled) return;
+        setLoadState("error");
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Could not load field notes.",
+        );
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [assignmentId, storyId, user]);
+
+  const beginEditorSession = (content: string, noteId: string | null) => {
+    ignoreEditorChangeRef.current = true;
+    setActiveId(noteId);
+    setDraft(content);
+    setBaseline(content);
+    setEditorKey((key) => key + 1);
+    setSaveError(null);
+    window.setTimeout(() => {
+      ignoreEditorChangeRef.current = false;
+    }, 50);
+  };
+
+  const handleDraftChange = (html: string) => {
+    if (ignoreEditorChangeRef.current) return;
+    setDraft(html);
+  };
+
+  const persistExisting = async (noteId: string, html: string) => {
+    if (!canPersist) return false;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const response = await fetch(`/api/field-notes/${noteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: extractHeading(html),
+          content: privateNoteContent(html),
+          status: "draft",
+        }),
+      });
+      const payload = (await response.json()) as {
+        note?: FieldNotePayload;
+        error?: string;
+      };
+      if (!response.ok || !payload.note) {
+        throw new Error(payload.error ?? "Could not save field note.");
+      }
+      const saved = toPrivateFieldNote(payload.note);
+      setNotes((current) =>
+        current.map((note) => (note.id === noteId ? saved : note)),
+      );
+      if (activeIdRef.current === noteId) {
+        setBaseline(html);
+      }
+      return true;
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Could not save field note.",
+      );
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Auto-save while editing an existing note.
+  useEffect(() => {
+    if (!activeId || draft === baseline || ignoreEditorChangeRef.current)
+      return;
+    if (isEmptyNote(draft) && !isEmptyNote(baseline)) return;
+    if (!canPersist) return;
+    const noteId = activeId;
+    const html = draft;
+    const timer = window.setTimeout(() => {
+      void persistExisting(noteId, html);
+    }, 450);
+    return () => window.clearTimeout(timer);
+    // persistExisting closes over latest setters; intentionally omit from deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce on draft only
+  }, [activeId, baseline, canPersist, draft]);
+
+  const flushActiveEdits = async () => {
+    const noteId = activeIdRef.current;
+    const html = draftRef.current;
+    const saved = baselineRef.current;
+    if (!noteId || html === saved) return true;
+    if (isEmptyNote(html) && !isEmptyNote(saved)) return true;
+    return persistExisting(noteId, html);
+  };
+
+  const loadNote = (note: PrivateFieldNote) => {
+    beginEditorSession(note.content, note.id);
+  };
+
+  const startNew = () => {
+    void flushActiveEdits().then(() => {
+      beginEditorSession(DEFAULT_NOTE, null);
+    });
+  };
+
+  const saveNewNote = async () => {
+    if (!canSaveNew || !storyId) return null;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const response = await fetch("/api/field-notes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(assignmentId ? { assignmentId } : {}),
+          storyId,
+          title: extractHeading(draft),
+          content: privateNoteContent(draft),
+          status: "draft",
+        }),
+      });
+      const payload = (await response.json()) as {
+        note?: FieldNotePayload;
+        error?: string;
+      };
+      if (!response.ok || !payload.note) {
+        throw new Error(payload.error ?? "Could not save field note.");
+      }
+      const saved = toPrivateFieldNote(payload.note);
+      setNotes((current) => [
+        saved,
+        ...current.filter((n) => n.id !== saved.id),
+      ]);
+      setActiveId(saved.id);
+      setBaseline(draft);
+      return saved;
+    } catch (error) {
+      setSaveError(
+        error instanceof Error ? error.message : "Could not save field note.",
+      );
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteActiveNote = async () => {
+    if (activeId && canPersist) {
+      setSaving(true);
+      setSaveError(null);
+      try {
+        const response = await fetch(`/api/field-notes/${activeId}`, {
+          method: "DELETE",
+        });
+        const payload = (await response.json()) as { error?: string };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Could not delete field note.");
+        }
+        setNotes((current) => current.filter((note) => note.id !== activeId));
+      } catch (error) {
+        setSaveError(
+          error instanceof Error
+            ? error.message
+            : "Could not delete field note.",
+        );
+        setSaving(false);
+        return;
+      } finally {
+        setSaving(false);
+      }
+    }
+    beginEditorSession(DEFAULT_NOTE, null);
+  };
+
+  const requestSelectNote = (noteId: string) => {
+    if (noteId === activeId) return;
+    if (isCreatingNew && hasChanges && !isEmptyNote(draft)) {
+      setPending({ kind: "select", noteId });
+      return;
+    }
+    void flushActiveEdits().then(() => {
+      const note = notes.find((entry) => entry.id === noteId);
+      if (note) loadNote(note);
+    });
+  };
+
+  const requestClose = () => {
+    if (isCreatingNew && hasChanges && !isEmptyNote(draft)) {
+      setPending({ kind: "close" });
+      return false;
+    }
+    void flushActiveEdits();
+    return true;
+  };
+
+  useEffect(() => {
+    closeGuardRef.current = () => {
+      if (isCreatingNew && hasChanges && !isEmptyNote(draft)) {
+        setPending({ kind: "close" });
+        return false;
+      }
+      void flushActiveEdits();
+      return true;
+    };
+    return () => {
+      closeGuardRef.current = null;
+    };
+  }, [closeGuardRef, draft, hasChanges, isCreatingNew]);
+
+  const resolvePending = async (action: "save" | "discard" | "cancel") => {
+    if (!pending) return;
+    if (action === "cancel") {
+      setPending(null);
+      return;
+    }
+
+    const navigation = pending;
+    if (action === "save") {
+      const saved = await saveNewNote();
+      setPending(null);
+      if (!saved) return;
+      if (navigation.kind === "select") {
+        const target = notes.find((entry) => entry.id === navigation.noteId);
+        if (target) loadNote(target);
+        return;
+      }
+      onClose();
+      return;
+    }
+
+    setPending(null);
+    if (navigation.kind === "select") {
+      const target = notes.find((entry) => entry.id === navigation.noteId);
+      if (target) loadNote(target);
+      else beginEditorSession(DEFAULT_NOTE, null);
+      return;
+    }
+    beginEditorSession(DEFAULT_NOTE, null);
+    onClose();
+  };
+
+  const handleHeaderClose = () => {
+    if (requestClose()) onClose();
+  };
+
+  const statusLabel = (() => {
+    if (loadState === "loading") return "Loading field notes…";
+    if (loadState === "error")
+      return loadError ?? "Could not load field notes.";
+    if (saveError) return saveError;
+    if (!user) return "Sign in to keep your notes";
+    if (saving || (activeId && hasChanges)) return "Saving…";
+    if (isCreatingNew) return hasChanges ? "Unsaved draft" : "New field note";
+    return "Saved";
+  })();
+  const statusIsError = loadState === "error" || Boolean(saveError);
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <PaneHeader
         eyebrow={ownerLabel}
         title={topic}
-        onClose={onClose}
-        action={
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={!hasChanges}
-            className="rounded-full bg-[#33281d] px-3.5 py-2 font-space text-[9px] uppercase tracking-[0.16em] text-[#fffaf2] transition-colors hover:bg-[#60462f] disabled:cursor-default disabled:bg-[#e8e1d8] disabled:text-[#a59a8c]"
-          >
-            {hasChanges ? "Save" : "Saved"}
-          </button>
-        }
+        onClose={handleHeaderClose}
       />
       <div className="scrollbar-pill min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-7">
         <p className="mb-5 max-w-[34ch] text-[13px] leading-6 text-[#877b6e]">
           A quiet place to collect details, questions, and connections as the
           story unfolds.
         </p>
-        <NotesEditor initialContent={draft} onChange={onDraftChange} />
-        <div className="mt-5 flex items-center justify-between gap-4 text-[11px] text-[#a59a8c]">
-          <span>{hasChanges ? "Unsaved changes" : "Saved to this voyage"}</span>
-          <span className="font-space uppercase tracking-[0.12em]">
-            Private field note
+        <NotesEditor
+          key={editorKey}
+          initialContent={draft}
+          onChange={handleDraftChange}
+        />
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <span
+            className={`min-w-0 flex-1 truncate text-left font-space text-[9px] uppercase tracking-[0.12em] ${
+              statusIsError ? "text-[#8a3b2c]" : "text-[#a59a8c]"
+            }`}
+            title={statusLabel}
+            role={statusIsError ? "alert" : undefined}
+            aria-live="polite"
+          >
+            {statusLabel}
           </span>
+          <div className="flex shrink-0 items-center gap-1">
+            <IconAction
+              label="Save"
+              disabled={!canSaveNew}
+              onClick={() => {
+                void saveNewNote();
+              }}
+            >
+              <Save size={17} strokeWidth={1.7} />
+            </IconAction>
+            {!isCreatingNew ? (
+              <IconAction label="New" disabled={saving} onClick={startNew}>
+                <Plus size={17} strokeWidth={1.7} />
+              </IconAction>
+            ) : null}
+            <IconAction
+              label="Delete"
+              disabled={
+                saving || (isCreatingNew && (!hasChanges || isEmptyNote(draft)))
+              }
+              onClick={() => {
+                void deleteActiveNote();
+              }}
+            >
+              <Trash2 size={17} strokeWidth={1.7} />
+            </IconAction>
+          </div>
         </div>
+
+        {notes.length > 0 ? (
+          <ul className="mt-6 space-y-1.5" aria-label="Private field notes">
+            {notes.map((note) => {
+              const selected = note.id === activeId;
+              return (
+                <li key={note.id}>
+                  <button
+                    type="button"
+                    onClick={() => requestSelectNote(note.id)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-xl px-3.5 py-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d] ${
+                      selected
+                        ? "bg-[#efe8df] text-[#29241f]"
+                        : "bg-[#faf8f4] text-[#29241f] hover:bg-[#efe8df]"
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      {note.authorType === "coco" ? (
+                        <CocoIcon
+                          size={14}
+                          color="#9a8d7d"
+                          className="shrink-0"
+                          title="From Coco"
+                        />
+                      ) : null}
+                      <span className="min-w-0 truncate text-[13px] leading-5">
+                        {note.heading}
+                      </span>
+                    </span>
+                    <span className="shrink-0 font-space text-[10px] uppercase tracking-[0.08em] text-[#9a8d7d]">
+                      {formatRelativeTime(note.createdAt, now)}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
       </div>
+
+      {pending ? (
+        <div className="absolute inset-0 z-10 flex items-end justify-center bg-[#32271c]/25 p-5 sm:items-center">
+          <div
+            role="alertdialog"
+            aria-labelledby="unsaved-note-title"
+            aria-describedby="unsaved-note-desc"
+            className="w-full max-w-[22rem] rounded-2xl border border-[#e2d9ce] bg-[#faf8f4] p-5 text-[#29241f] shadow-[0_18px_50px_rgba(48,36,24,0.22)]"
+          >
+            <h3
+              id="unsaved-note-title"
+              className="font-display text-[20px] leading-tight tracking-[-0.02em]"
+            >
+              Save changes?
+            </h3>
+            <p
+              id="unsaved-note-desc"
+              className="mt-2 text-[13px] leading-5 text-[#877b6e]"
+            >
+              You have an unsaved field note. Save it before leaving, or discard
+              the draft.
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => void resolvePending("cancel")}
+                className="rounded-full px-3.5 py-2 font-space text-[9px] uppercase tracking-[0.14em] text-[#6b6258] transition-colors hover:bg-[#efe8df] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void resolvePending("discard")}
+                className="rounded-full px-3.5 py-2 font-space text-[9px] uppercase tracking-[0.14em] text-[#8a3b2c] transition-colors hover:bg-[#f3e4df] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                onClick={() => void resolvePending("save")}
+                disabled={!canSaveNew}
+                className="rounded-full bg-[#33281d] px-3.5 py-2 font-space text-[9px] uppercase tracking-[0.14em] text-[#fffaf2] transition-colors hover:bg-[#60462f] disabled:cursor-default disabled:bg-[#e8e1d8] disabled:text-[#a59a8c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function toPrivateFieldNote(note: FieldNotePayload): PrivateFieldNote {
+  const html = isPrivateNoteContent(note.content)
+    ? note.content.html
+    : DEFAULT_NOTE;
+  return {
+    id: note.id,
+    content: html,
+    heading:
+      (typeof note.title === "string" && note.title.trim()) ||
+      extractHeading(html),
+    createdAt: note.createdAt,
+    authorType: note.authorType,
+  };
+}
+
+function IconAction({
+  label,
+  disabled = false,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClick}
+      className="group relative rounded-full p-2 text-[#29241f] transition-colors hover:bg-[#efe8df] disabled:cursor-default disabled:text-[#c4bbb0] disabled:hover:bg-transparent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
+    >
+      {children}
+      <span className="pointer-events-none absolute bottom-[calc(100%+0.35rem)] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-white px-2 py-1 font-space text-[9px] uppercase tracking-[0.14em] text-[#6b6258] opacity-0 shadow-[0_4px_14px_rgba(48,36,24,0.12)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-disabled:hidden">
+        {label}
+      </span>
+    </button>
+  );
+}
+
+function extractHeading(html: string): string {
+  if (typeof window === "undefined") return "Untitled note";
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const heading = doc.querySelector("h1, h2, h3");
+  const headingText = heading?.textContent?.replace(/\s+/g, " ").trim();
+  if (headingText) return headingText;
+  const text = doc.body.textContent?.replace(/\s+/g, " ").trim() ?? "";
+  if (!text) return "Untitled note";
+  return text.length > 52 ? `${text.slice(0, 52)}…` : text;
+}
+
+function isEmptyNote(html: string): boolean {
+  if (typeof window === "undefined") return html === DEFAULT_NOTE;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return !doc.body.textContent?.trim();
 }
 
 function formatPossessive(name: string) {
@@ -305,21 +893,34 @@ function formatPossessive(name: string) {
 function CocoStage({
   visible,
   topic,
+  storyId,
+  assignmentId,
   dialoguePoint,
   dialogueHistory,
   speaker,
+  escapeGuardRef,
   onClose,
 }: {
   visible: boolean;
   topic: string;
+  storyId?: string;
+  assignmentId?: string;
   dialoguePoint: string;
   dialogueHistory: DialogueHistoryEntry[];
   speaker?: string;
+  escapeGuardRef: React.MutableRefObject<(() => boolean) | null>;
   onClose: () => void;
 }) {
+  // Deterministic pick so SSR and client match (Math.random in useState hydrates differently).
   const [greeting] = useState(() => {
-    const index = Math.floor(Math.random() * COCO_GREETING_LINES.length);
-    return COCO_GREETING_LINES[index];
+    const seed = `${topic}\0${dialoguePoint}\0${storyId ?? ""}`;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+    }
+    return COCO_GREETING_LINES[
+      Math.abs(hash) % COCO_GREETING_LINES.length
+    ]!;
   });
   const [dialogueNodes, setDialogueNodes] = useState<string[]>([greeting]);
   const [dialogueIndex, setDialogueIndex] = useState(0);
@@ -327,6 +928,56 @@ function CocoStage({
   const [showOptions, setShowOptions] = useState(true);
   const [history, setHistory] = useState<CocoHistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
+  const isThinkingRef = useRef(false);
+  const showOptionsRef = useRef(true);
+  /** When true, reset idle greeting only after the overlay is hidden (no flash). */
+  const resetWhenHiddenRef = useRef(false);
+
+  isThinkingRef.current = isThinking;
+  showOptionsRef.current = showOptions;
+
+  const abortInFlight = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    requestIdRef.current += 1;
+    isThinkingRef.current = false;
+    setIsThinking(false);
+  }, []);
+
+  const resetDialogue = useCallback(() => {
+    abortInFlight();
+    resetWhenHiddenRef.current = false;
+    setDialogueNodes([greeting]);
+    setDialogueIndex(0);
+    setShowOptions(true);
+  }, [abortInFlight, greeting]);
+
+  // After cancel/close: reset idle state only once hidden so greeting never flashes.
+  useEffect(() => {
+    if (visible) return;
+    if (!resetWhenHiddenRef.current && !abortRef.current) return;
+    resetDialogue();
+  }, [visible, resetDialogue]);
+
+  useEffect(() => {
+    escapeGuardRef.current = () => {
+      // Paging through an already-generated answer — keep the overlay open.
+      if (!isThinkingRef.current && !showOptionsRef.current) {
+        return false;
+      }
+      // Still waiting on the model — cancel now; reset greeting after hide.
+      if (isThinkingRef.current || abortRef.current) {
+        abortInFlight();
+        resetWhenHiddenRef.current = true;
+      }
+      return true;
+    };
+    return () => {
+      escapeGuardRef.current = null;
+    };
+  }, [abortInFlight, escapeGuardRef]);
 
   useEffect(() => {
     if (!visible) return;
@@ -359,8 +1010,15 @@ function CocoStage({
   };
 
   const askCoco = async (question: string) => {
+    abortRef.current?.abort();
+    requestIdRef.current += 1;
+    const controller = new AbortController();
+    const requestId = requestIdRef.current;
+    abortRef.current = controller;
+    resetWhenHiddenRef.current = false;
     setShowOptions(false);
     setIsThinking(true);
+    isThinkingRef.current = true;
     const thinkingIndex = Math.floor(
       Math.random() * COCO_THINKING_LINES.length,
     );
@@ -370,10 +1028,18 @@ function CocoStage({
       const response = await fetch("/api/coco/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           question,
           context: {
             topic,
+            storyId,
+            assignmentId,
+            ...(COCO_GREETING_OPTIONS.includes(
+              question as (typeof COCO_GREETING_OPTIONS)[number],
+            )
+              ? { prefilledOption: question }
+              : {}),
             currentDialogue: dialoguePoint,
             speaker,
             dialogueHistory,
@@ -381,17 +1047,32 @@ function CocoStage({
           },
         }),
       });
+      if (controller.signal.aborted || requestId !== requestIdRef.current) {
+        return;
+      }
       const payload = (await response.json()) as {
         answer?: string;
+        summary?: string;
+        noteTitle?: string;
+        sources?: string[];
         citations?: Array<{ url: string; title?: string }>;
+        fieldNoteId?: string;
         error?: string;
       };
+      if (controller.signal.aborted || requestId !== requestIdRef.current) {
+        return;
+      }
       if (!response.ok || !payload.answer) {
         throw new Error(payload.error || "Coco could not answer");
       }
       setHistory((entries) => [
         ...entries,
-        { question, answer: payload.answer!, citations: payload.citations },
+        {
+          question,
+          answer: payload.answer!,
+          citations: payload.citations,
+          sources: payload.sources,
+        },
       ]);
       const nodes = payload.answer
         .split(/\s*\|\|\|\s*/)
@@ -406,6 +1087,14 @@ function CocoStage({
       ]);
       setDialogueIndex(0);
     } catch (error) {
+      if (
+        controller.signal.aborted ||
+        requestId !== requestIdRef.current ||
+        (error instanceof DOMException && error.name === "AbortError") ||
+        (error instanceof Error && error.name === "AbortError")
+      ) {
+        return;
+      }
       setDialogueNodes([
         error instanceof Error
           ? error.message
@@ -413,8 +1102,22 @@ function CocoStage({
       ]);
       setDialogueIndex(0);
     } finally {
-      setIsThinking(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
+      if (requestId === requestIdRef.current) {
+        isThinkingRef.current = false;
+        setIsThinking(false);
+      }
     }
+  };
+
+  const handleClose = () => {
+    if (isThinkingRef.current || abortRef.current) {
+      abortInFlight();
+      resetWhenHiddenRef.current = true;
+    }
+    onClose();
   };
 
   return (
@@ -441,7 +1144,7 @@ function CocoStage({
             setShowOptions(true);
           }
         }}
-        onClose={onClose}
+        onClose={handleClose}
       />
       <button
         type="button"
@@ -568,23 +1271,44 @@ function CocoSpeech({
   onClose?: () => void;
 }) {
   const typingGateRef = useRef({ done: false, skip: () => undefined });
+  const panelRef = useRef<HTMLDivElement>(null);
   const [speechDone, setSpeechDone] = useState(false);
-  const showChoices = Boolean(speechDone && options?.length && onOption);
+  const hasOptions = Boolean(options?.length && onOption);
+  // If options arrive after the current line already finished typing (answer →
+  // follow-up choices), show the prompt instantly so it doesn't retype.
+  const promptTypingEnabled = !(hasOptions && speechDone);
 
   const handleTypingChange = (done: boolean) => {
     setSpeechDone(done);
     onSpeechDone?.(done);
   };
 
+  // ChoiceBeat may try to focus while this overlay is `display: none` (always
+  // mounted). Re-assert focus once the stage is actually visible.
+  useEffect(() => {
+    if (!visible || !hasOptions || !speechDone) return;
+    const id = window.requestAnimationFrame(() => {
+      panelRef.current
+        ?.querySelector<HTMLButtonElement>('[data-choice-index="0"]')
+        ?.focus();
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [visible, hasOptions, speechDone, text]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== " " && event.key !== "Enter") return;
       if (!visible) return;
-      if (showChoices) return;
       const target = event.target as HTMLElement | null;
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      // Let focused choices activate natively (story Space is already disabled).
+      if (target instanceof HTMLElement && target.closest('[role="option"]')) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
+      // Choices are ready — Coco's DialoguePanel owns continue; don't page here.
+      if (hasOptions && speechDone) return;
       if (!typingGateRef.current.done) {
         typingGateRef.current.skip();
       } else {
@@ -594,13 +1318,15 @@ function CocoSpeech({
 
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [onContinue, showChoices, visible]);
+  }, [hasOptions, onContinue, speechDone, visible]);
 
-  const view: Presentable = showChoices
+  // One typewriter pass: use the spoken line as the choice prompt. Avoids
+  // greeting → “What are you curious about?” double flash on reopen.
+  const view: Presentable = hasOptions
     ? {
         kind: "choice",
         id: "coco-options",
-        prompt: "What are you curious about?",
+        prompt: text,
         choices: options!.map((option, index) => ({
           index,
           label: option,
@@ -628,7 +1354,10 @@ function CocoSpeech({
           <X size={18} strokeWidth={1.7} />
         </button>
       ) : null}
-      <div className="flex w-[min(46rem,calc(100vw-2rem))] flex-col items-center gap-5">
+      <div
+        ref={panelRef}
+        className="pointer-events-auto flex w-[min(46rem,calc(100vw-2rem))] flex-col items-center gap-5"
+      >
         <div className="relative h-[min(48vh,30rem)] w-[min(58vw,30rem)]">
           <div className="absolute inset-[7%] rounded-full bg-[#f0ece6] shadow-[0_18px_55px_rgba(77,58,37,0.12)]" />
           <div className="relative z-10 h-full w-full">
@@ -641,11 +1370,12 @@ function CocoSpeech({
           </div>
         </div>
         <DialoguePanel
-          className="min-h-[14rem] w-full rounded-2xl border border-[#e2d9ce] bg-[#faf8f4]/95 px-7 py-6 text-[#29241f] shadow-[0_24px_80px_rgba(48,36,24,0.18)] backdrop-blur"
+          className="min-h-[14rem] w-full rounded-2xl border border-[#e2d9ce] bg-[#faf8f4]/95 px-7 py-6 text-[#29241f] shadow-[0_24px_80px_rgba(48,36,24,0.18)] backdrop-blur [&_[aria-selected=true]]:!bg-[#efe8df]"
           view={view}
           theme="vanilla"
           size="lg"
           typingGateRef={typingGateRef}
+          typingEnabled={promptTypingEnabled}
           showHint={false}
           onTypingChange={handleTypingChange}
           onAdvance={() => onContinue?.()}

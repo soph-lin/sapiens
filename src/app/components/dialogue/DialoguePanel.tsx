@@ -24,6 +24,7 @@ function DialogueBoxWithHint({
   onRestart,
   size,
   showHint,
+  typingEnabled,
   onTypingChange,
   editableChoice,
   dropdownChoice,
@@ -36,6 +37,7 @@ function DialogueBoxWithHint({
   onRestart: () => void;
   size?: DialogueBoxSize;
   showHint?: boolean;
+  typingEnabled?: boolean;
   onTypingChange?: (done: boolean) => void;
   editableChoice?: DialogueEditableChoice;
   dropdownChoice?: DialogueDropdownChoice;
@@ -61,6 +63,7 @@ function DialogueBoxWithHint({
         onChoose={onChoose}
         onRestart={onRestart}
         size={size}
+        typingEnabled={typingEnabled}
         onTypingChange={handleTypingChange}
         editableChoice={editableChoice}
         dropdownChoice={dropdownChoice}
@@ -101,6 +104,13 @@ export type DialoguePanelProps = {
   revealKey?: number;
   size?: DialogueBoxSize;
   showHint?: boolean;
+  /**
+   * When false, Space/Enter do not advance or skip typewriter. Use while an
+   * overlay (e.g. Coco) owns those keys. Default true.
+   */
+  keyboardEnabled?: boolean;
+  /** When false, choice prompts appear instantly (no typewriter). Default true. */
+  typingEnabled?: boolean;
   onTypingChange?: (done: boolean) => void;
   children?: ReactNode;
   editableChoice?: DialogueEditableChoice;
@@ -130,6 +140,8 @@ export function DialoguePanel({
   revealKey,
   size,
   showHint,
+  keyboardEnabled = true,
+  typingEnabled,
   onTypingChange,
   children,
   editableChoice,
@@ -179,6 +191,7 @@ export function DialoguePanel({
       }
 
       if (event.key !== " " && event.key !== "Enter") return;
+      if (!keyboardEnabled) return;
       // Let choice options keep native Space/Enter activation.
       if (
         event.target instanceof HTMLElement &&
@@ -192,7 +205,7 @@ export function DialoguePanel({
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [onBack, onEscape]);
+  }, [keyboardEnabled, onBack, onEscape]);
 
   return (
     <section className={`text-white ${className}`}>
@@ -237,6 +250,7 @@ export function DialoguePanel({
           onRestart={onRestart}
           size={size}
           showHint={showHint}
+          typingEnabled={typingEnabled}
           onTypingChange={onTypingChange}
           editableChoice={editableChoice}
           dropdownChoice={dropdownChoice}

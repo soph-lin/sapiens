@@ -37,9 +37,9 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${playfairDisplay.variable} ${manrope.variable} ${spaceMono.variable} h-full antialiased`}
+      className={`${playfairDisplay.variable} ${manrope.variable} ${spaceMono.variable} h-full scrollbar-no-track antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-black text-[#f4f1ea]">
+      <body className="min-h-full flex flex-col bg-black text-[#f4f1ea] scrollbar-no-track">
         <UserProvider initialUser={user}>{children}</UserProvider>
       </body>
     </html>

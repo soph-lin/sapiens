@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertAssignmentVisible, assertPublishedTargetStory, assignmentAccessInclude, assignmentIncludesStory, findAssignmentForAccess } from "@/lib/learning/access";
 import { ApiError, errorResponse, jsonInput, parseJsonBody, publicationStatus, requireDemoUser, requiredText } from "@/lib/learning/api";
+import { isPrivateNoteContent } from "@/lib/learning/field-note-content";
 import { syncStarstreamLogFromFieldNote } from "@/lib/learning/starstream";
 
 export const runtime = "nodejs";
@@ -63,6 +64,12 @@ export async function GET(request: Request) {
       if (!ownsStory && !inVisibleAssignment) {
         throw new ApiError(404, "Voyage not found.");
       }
+    } else if (storyId && !assignmentId && user.role === "teacher") {
+      const published = await prisma.story.findFirst({
+        where: { id: storyId, status: "published" },
+        select: { id: true },
+      });
+      if (!published) throw new ApiError(404, "Voyage not found.");
     }
     const assignmentIds = visible.map((assignment) => assignment.id);
     const storyIds = storyId ? [storyId] : undefined;
@@ -72,10 +79,10 @@ export async function GET(request: Request) {
           { OR: [
             { assignmentId: { in: assignmentIds } },
             { story: { createdById: user.id } },
-            { authorId: user.id, authorType: "bot" },
+            { authorId: user.id },
           ] },
           ...(storyIds ? [{ storyId: { in: storyIds } }] : []),
-          // Teachers and students both need their own draft bot notes (actor citations).
+          // Teachers and students both need their own draft notes.
           // Published notes remain visible within assignment/story access above.
           { OR: [{ status: "published" as const }, { authorId: user.id }] },
         ],
@@ -96,7 +103,6 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await requireDemoUser(request);
-    if (user.role !== "student") throw new ApiError(403, "Only cadets can publish field notes.");
     const body = parseJsonBody<NoteBody>(await request.json());
     const assignmentId = body.assignmentId === undefined || body.assignmentId === null || body.assignmentId === "" ? undefined : requiredText(body.assignmentId, "assignmentId");
     const storyId = requiredText(body.storyId, "storyId");
@@ -106,52 +112,57 @@ export async function POST(request: Request) {
       assertAssignmentVisible(assignment, user);
       assertPublishedTargetStory(assignment, storyId);
     } else {
-      const soloStory = await prisma.story.findFirst({ where: { id: storyId, createdById: user.id, status: "published" }, select: { id: true } });
-      if (!soloStory) throw new ApiError(404, "Solo voyage not found.");
+      const contentPreview =
+        body.content !== undefined ? jsonInput(body.content, "content") : null;
+      const privateDraft =
+        contentPreview !== null &&
+        isPrivateNoteContent(contentPreview) &&
+        (publicationStatus(body.status) ?? "draft") === "draft";
+      if (privateDraft) {
+        // Any signed-in user may keep private sail notes on a published voyage.
+        const published = await prisma.story.findFirst({
+          where: { id: storyId, status: "published" },
+          select: { id: true },
+        });
+        if (!published) throw new ApiError(404, "Voyage not found.");
+      } else {
+        const soloStory = await prisma.story.findFirst({
+          where: { id: storyId, createdById: user.id, status: "published" },
+          select: { id: true },
+        });
+        if (!soloStory) throw new ApiError(404, "Solo voyage not found.");
+      }
     }
     const status = publicationStatus(body.status) ?? "draft";
     const content = noteContent(body);
     const sources = body.sources === undefined ? undefined : jsonInput(body.sources, "sources");
     const title = body.title === undefined ? undefined : requiredText(body.title, "title");
-    const existing = await prisma.fieldNote.findFirst({ where: { assignmentId: assignmentId ?? null, storyId, authorId: user.id, authorType: "user" }, orderBy: { updatedAt: "desc" } });
-    const publishedAt =
-      status === "published"
-        ? existing?.status === "published" && existing.publishedAt
-          ? existing.publishedAt
-          : new Date()
-        : null;
-    const note = existing
-      ? await prisma.fieldNote.update({
-          where: { id: existing.id },
-          data: {
-            title,
-            content,
-            ...(sources === undefined ? {} : { sources }),
-            status,
-            publishedAt,
-            publishedById: status === "published" ? (existing.publishedById ?? user.id) : null,
-          },
-          include: { author: { select: { username: true, displayName: true } }, story: { select: { id: true, slug: true, topic: true } } },
-        })
-      : await prisma.fieldNote.create({
-          data: {
-            assignmentId,
-            storyId,
-            authorId: user.id,
-            title,
-            content,
-            sources,
-            status,
-            publishedAt,
-            publishedById: status === "published" ? user.id : null,
-          },
-          include: { author: { select: { username: true, displayName: true } }, story: { select: { id: true, slug: true, topic: true } } },
-        });
+    // Always create — updates go through PATCH /api/field-notes/[id].
+    // Callers that need a single takeaway note load it first, then PATCH.
+    const publishedAt = status === "published" ? new Date() : null;
+    const note = await prisma.fieldNote.create({
+      data: {
+        assignmentId,
+        storyId,
+        authorId: user.id,
+        title,
+        content,
+        sources,
+        status,
+        publishedAt,
+        publishedById: status === "published" ? user.id : null,
+      },
+      include: {
+        author: { select: { username: true, displayName: true } },
+        story: { select: { id: true, slug: true, topic: true } },
+        starstreamLog: { select: { id: true, type: true } },
+      },
+    });
     await syncStarstreamLogFromFieldNote(note, {
       allowReplies: typeof body.allowReplies === "boolean" ? body.allowReplies : undefined,
       attachments: body.attachments,
     });
-    return NextResponse.json({ note: noteView(note) }, { status: existing ? 200 : 201 });
+    return NextResponse.json({ note: noteView(note) }, { status: 201 });
   } catch (error) {
     return errorResponse(error, "Could not save field note.");
   }

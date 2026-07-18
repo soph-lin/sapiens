@@ -84,6 +84,7 @@ export default async function StoryPage({ params }: StoryPageProps) {
       theme="vanilla"
       title={story.topic}
       subtitle="A Sapiens voyage"
+      storyId={story.id}
       characters={story.characters.map((character) => ({
         name: character.name,
         assetUrl: dataUrl(character.asset),

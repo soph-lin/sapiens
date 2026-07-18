@@ -3,6 +3,7 @@
 import { Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useUser } from "@/app/components/user/UserProvider";
+import { isTakeawayNoteContent } from "@/lib/learning/field-note-content";
 
 type VoyageTakeawayNoteProps = {
   storyId: string;
@@ -100,7 +101,8 @@ export default function VoyageTakeawayNote({
         const own = (payload.notes ?? []).find(
           (note) =>
             note.authorId === user.id &&
-            (note.authorType === "user" || note.authorType == null),
+            (note.authorType === "user" || note.authorType == null) &&
+            isTakeawayNoteContent(note.content),
         );
         if (cancelled) return;
         if (own) {
