@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { errorResponse, jsonInput, parseJsonBody, requireDemoUser, requiredText, ApiError } from "@/lib/learning/api";
-import { isTakeawayNoteContent, takeawayNoteBody } from "@/lib/learning/field-note-content";
+import { isTakeawayNoteContent, isVoyageCompletionNote, takeawayNoteBody } from "@/lib/learning/field-note-content";
 import { checkToxicity } from "@/lib/moderation/toxicity";
 import {
   starstreamAttachmentsView,
@@ -183,7 +183,7 @@ async function snapshot(userId: string) {
       name: true,
       sourceMode: true,
       approvedDomains: true,
-      teacher: { select: { username: true, displayName: true } },
+      teacher: { select: { id: true, username: true, displayName: true } },
       memberships: {
         where: { user: { role: "student" } },
         orderBy: { user: { displayName: "asc" } },
@@ -196,6 +196,10 @@ async function snapshot(userId: string) {
   });
   const cadetIds = classroom?.memberships.map((membership) => membership.userId) ?? [];
   const cadetCount = cadetIds.length;
+  // Captains and cadets both share /home visitor notes into the classroom feed.
+  const classroomVisitorAuthorIds = classroom
+    ? [...new Set([classroom.teacher.id, ...cadetIds])]
+    : [];
   const fieldNotes = await prisma.fieldNote.findMany({
     where: {
       AND: [
@@ -204,9 +208,9 @@ async function snapshot(userId: string) {
           { story: { createdById: userId } },
           { authorId: userId },
         ] },
-        isStudent
-          ? { OR: [{ status: "published" as const }, { authorId: userId }] }
-          : { status: "published" as const },
+        // Teachers and students both need their own draft notes (actor visitor drafts).
+        // Published notes remain visible within assignment/story access above.
+        { OR: [{ status: "published" as const }, { authorId: userId }] },
       ],
     },
     orderBy: { createdAt: "desc" },
@@ -218,16 +222,16 @@ async function snapshot(userId: string) {
     author: { select: { username: true, displayName: true } },
   } as const;
   // Roots: classroom assignments, own solo stories, own posts (e.g. home visitor
-  // notes with no assignment), and classmate visitor notes in the same classroom.
+  // notes with no assignment), and classroom visitor notes from captain + cadets.
   const starstreamVisibility: Prisma.StarstreamLogWhereInput[] = [
     { assignmentId: { in: assignments.map((assignment) => assignment.id) } },
     { story: { createdById: userId } },
     { authorId: userId },
   ];
-  if (cadetIds.length) {
+  if (classroomVisitorAuthorIds.length) {
     starstreamVisibility.push({
       type: "visitorNote",
-      authorId: { in: isTeacher ? cadetIds : [...new Set([...cadetIds, userId])] },
+      authorId: { in: classroomVisitorAuthorIds },
     });
   }
   const starstreamRoots = await prisma.starstreamLog.findMany({
@@ -510,8 +514,19 @@ export async function POST(request: Request) {
       const voyageId = requiredText(payload.voyageId, "voyageId");
       const assignment = await prisma.classroomAssignment.findFirst({ where: { status: "published", OR: [{ storyId: voyageId }, { journey: { voyages: { some: { storyId: voyageId } } } }], classroom: { memberships: { some: { userId: user.id } } } } });
       if (assignment) {
-        const note = await prisma.fieldNote.findFirst({ where: { assignmentId: assignment.id, storyId: voyageId, authorId: user.id, status: "published" }, select: { id: true } });
-        if (!note) throw new Error("Publish a field note before completing this voyage.");
+        const notes = await prisma.fieldNote.findMany({
+          where: {
+            assignmentId: assignment.id,
+            storyId: voyageId,
+            authorId: user.id,
+            status: "published",
+            authorType: "user",
+          },
+          select: { content: true, status: true, authorType: true },
+        });
+        if (!notes.some((note) => isVoyageCompletionNote(note))) {
+          throw new Error("Publish a field note before completing this voyage.");
+        }
       } else {
         const soloStory = await prisma.story.findFirst({ where: { id: voyageId, createdById: user.id, status: "published" }, select: { id: true } });
         if (!soloStory) throw new Error("Voyage is not available to this cadet.");

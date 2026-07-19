@@ -24,8 +24,10 @@ function DialogueBoxWithHint({
   onRestart,
   size,
   showHint,
+  keyboardEnabled,
   typingEnabled,
   onTypingChange,
+  richText,
   editableChoice,
   dropdownChoice,
 }: {
@@ -37,8 +39,10 @@ function DialogueBoxWithHint({
   onRestart: () => void;
   size?: DialogueBoxSize;
   showHint?: boolean;
+  keyboardEnabled?: boolean;
   typingEnabled?: boolean;
   onTypingChange?: (done: boolean) => void;
+  richText?: boolean;
   editableChoice?: DialogueEditableChoice;
   dropdownChoice?: DialogueDropdownChoice;
 }) {
@@ -63,13 +67,15 @@ function DialogueBoxWithHint({
         onChoose={onChoose}
         onRestart={onRestart}
         size={size}
+        keyboardEnabled={keyboardEnabled}
         typingEnabled={typingEnabled}
         onTypingChange={handleTypingChange}
+        richText={richText}
         editableChoice={editableChoice}
         dropdownChoice={dropdownChoice}
       />
       {continueHint ? (
-        <p className={`${theme.hint} mt-3`}>{continueHint}</p>
+        <p className={`${theme.hint} mt-6`}>{continueHint}</p>
       ) : null}
     </>
   );
@@ -112,6 +118,8 @@ export type DialoguePanelProps = {
   /** When false, choice prompts appear instantly (no typewriter). Default true. */
   typingEnabled?: boolean;
   onTypingChange?: (done: boolean) => void;
+  /** Inline markdown for dialogue body text (Coco). Default false. */
+  richText?: boolean;
   children?: ReactNode;
   editableChoice?: DialogueEditableChoice;
   dropdownChoice?: DialogueDropdownChoice;
@@ -143,6 +151,7 @@ export function DialoguePanel({
   keyboardEnabled = true,
   typingEnabled,
   onTypingChange,
+  richText = false,
   children,
   editableChoice,
   dropdownChoice,
@@ -250,14 +259,16 @@ export function DialoguePanel({
           onRestart={onRestart}
           size={size}
           showHint={showHint}
+          keyboardEnabled={keyboardEnabled}
           typingEnabled={typingEnabled}
           onTypingChange={onTypingChange}
+          richText={richText}
           editableChoice={editableChoice}
           dropdownChoice={dropdownChoice}
         />
       </div>
 
-      {onBack ? <p className={`${theme.hint} mt-3`}>Back — q</p> : null}
+      {onBack ? <p className={`${theme.hint} mt-6`}>Back — q</p> : null}
 
       {children}
     </section>

@@ -54,7 +54,7 @@ export type ActorAnswer = {
   followUps?: [string, string, string];
   summary?: string;
   sources?: string[];
-  /** Progress events for the home-2d [d] debug panel (and terminal). */
+  /** Progress events for the home [d] debug panel (and terminal). */
   progress?: AgentProgressEvent[];
 };
 

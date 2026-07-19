@@ -129,3 +129,32 @@ When changing the dialogue JSON shape, update and verify these dependencies toge
 8. Stop at an `end` node; expose final state for the debrief (show dynamic stats UI only when stats are present).
 
 Use JSON story files. Keep the parser/simulation engine independent from React UI.
+
+## Shared dialogue UI
+
+`DialoguePanel` / `DialogueBox` render story and companion choice lists. Beyond fixed
+choice labels, the UI supports two custom option types used by `/home` actors and
+voyage Coco (`/sail`):
+
+- `editableChoice` — free-text option. Empty `label` shows only the input; set
+  `placeholder` for the blank prompt (Coco: `Type in your question here`).
+- `dropdownChoice` — expands into a select of fixed values.
+- `richText` — when true (Coco), dialogue body renders inline markdown (`**bold**`,
+  `*italic*` / `_italic_`). HTML-like tags stay literal text and are never executed.
+  Typewriter reveals plain letters only: emphasis styles apply as characters appear;
+  markdown markers are never shown while typing.
+
+Choice lists accept digit quick-keys `1`–`9` (and numpad) matching the visible
+option numbers: press `1` to run the first fixed choice. Free-text / dropdown
+slots focus on their digit instead of auto-submitting. Digits are ignored while
+typing in an input/select, and when `keyboardEnabled` is false (e.g. story under
+an open Coco overlay). When only one option is present, the left-side index
+labels are hidden (quick-keys still work).
+
+Voyage Coco (`/sail`): Escape always closes the overlay. Closing (Escape, M, or
+the X control) resets to the greeting so a mid-answer dismiss never reopens with
+the generated reply plus choice options. Options still appear only after the
+player advances through the full answer (including the follow-up line).
+
+`/home` NPC chat and voyage Coco both pass these through the same panel so free-text
+and dropdown behavior stay consistent. Coco enables `richText` on that shared panel.

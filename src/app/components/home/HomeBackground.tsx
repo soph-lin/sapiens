@@ -36,8 +36,9 @@ export default function HomeBackground() {
 
     const resize = () => {
       dpr = Math.min(window.devicePixelRatio || 1, 2);
-      w = window.innerWidth;
-      h = window.innerHeight;
+      const parent = canvas.parentElement;
+      w = parent?.clientWidth || window.innerWidth;
+      h = parent?.clientHeight || window.innerHeight;
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
       canvas.style.width = `${w}px`;

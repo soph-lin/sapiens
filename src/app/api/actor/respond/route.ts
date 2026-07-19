@@ -1,6 +1,10 @@
 import { actor, type ActorDialogueContext } from "@/lib/orchestrator/agent/actor";
 import { isFirstGreetingMode } from "@/lib/orchestrator/agent/actor-greeting";
 import { prisma } from "@/lib/prisma";
+import {
+  classroomWhereForUser,
+  findPublishedAssignmentForStory,
+} from "@/lib/learning/access";
 import { requireDemoUser } from "@/lib/learning/api";
 import {
   normalizeFlourishConfig,
@@ -133,27 +137,14 @@ export async function POST(request: Request) {
 
   const classroom = user
     ? await prisma.classroom.findFirst({
-        where:
-          user.role === "teacher"
-            ? { teacherId: user.id }
-            : { memberships: { some: { userId: user.id } } },
+        where: classroomWhereForUser(user),
         select: { sourceMode: true, approvedDomains: true },
       })
     : null;
   const flourish = actorFlourishFromClassroom(classroom);
 
   const assignment = user
-    ? await prisma.classroomAssignment.findFirst({
-        where: {
-          status: "published",
-          classroom: { memberships: { some: { userId: user.id } } },
-          OR: [
-            { storyId: character.story.id },
-            { journey: { voyages: { some: { storyId: character.story.id } } } },
-          ],
-        },
-        select: { id: true },
-      })
+    ? await findPublishedAssignmentForStory(user, character.story.id)
     : null;
 
   const encoder = new TextEncoder();

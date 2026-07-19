@@ -1,4 +1,4 @@
-/** Friendly home-2d error copy. Raw details stay in `console.error`. */
+/** Friendly home error copy. Raw details stay in `console.error`. */
 
 export const MAP_LOAD_ERROR_LABELS = [
   "a pipe suddenly burst — mopping up, back in a moment!",

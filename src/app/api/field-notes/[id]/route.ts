@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ApiError, errorResponse, jsonInput, parseJsonBody, publicationStatus, requireDemoUser, requiredText } from "@/lib/learning/api";
+import {
+  fieldNotePlainBody,
+  isPrivateNoteContent,
+} from "@/lib/learning/field-note-content";
 import { checkToxicity } from "@/lib/moderation/toxicity";
-import { publishVisitorNoteToStarstream, starstreamLogBody, syncStarstreamLogFromFieldNote, TOXICITY_BLOCKED } from "@/lib/learning/starstream";
+import {
+  publishVisitorNoteToStarstream,
+  starstreamLogBody,
+  syncStarstreamLogFromFieldNote,
+  TOXICITY_BLOCKED,
+} from "@/lib/learning/starstream";
 
 export const runtime = "nodejs";
 
@@ -17,6 +26,12 @@ type NoteBody = {
   attachments?: unknown;
   commentary?: unknown;
 };
+
+const noteInclude = {
+  author: { select: { username: true, displayName: true } },
+  story: { select: { id: true, slug: true, topic: true } },
+  starstreamLog: { select: { id: true, type: true } },
+} as const;
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -36,14 +51,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const body = parseJsonBody<NoteBody>(await request.json());
 
     if (body.action === "publish-visitor-note") {
-      if (note.authorType !== "bot") throw new ApiError(400, "Only visitor notes can be shared this way.");
+      if (note.authorType !== "bot" && note.authorType !== "coco") {
+        throw new ApiError(400, "Only visitor notes can be shared this way.");
+      }
       const commentary =
         body.commentary === undefined || body.commentary === null
           ? undefined
           : requiredText(body.commentary, "commentary");
       const result = await publishVisitorNoteToStarstream({
         note,
-        publisher: { id: user.id, displayName: user.displayName },
+        publisher: { id: user.id, displayName: user.displayName, role: user.role },
         commentary,
         voyageTopic: note.story.topic,
       });
@@ -51,20 +68,57 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         if (result.error === TOXICITY_BLOCKED) throw new ApiError(400, TOXICITY_BLOCKED);
         if (result.error === "empty_fact") throw new ApiError(400, "This visitor note has no fact to share.");
         if (result.error === "forbidden") throw new ApiError(403, "Only the note owner can publish it.");
+        if (result.error === "not_visitor_note") {
+          throw new ApiError(400, "Only visitor notes can be shared this way.");
+        }
         throw new ApiError(400, "Could not publish visitor note.");
       }
       const refreshed = await prisma.fieldNote.findUnique({
         where: { id },
-        include: {
-          author: { select: { username: true, displayName: true } },
-          story: { select: { id: true, slug: true, topic: true } },
-          starstreamLog: { select: { id: true, type: true } },
-        },
+        include: noteInclude,
       });
       return NextResponse.json({
         note: refreshed,
         starstreamLogId: result.log.id,
       });
+    }
+
+    if (body.action === "share-private-note") {
+      if (note.authorType === "bot" || note.authorType === "coco") {
+        throw new ApiError(400, "Use visitor share for companion notes.");
+      }
+      if (!isPrivateNoteContent(note.content)) {
+        throw new ApiError(400, "Only private journal notes can be shared this way.");
+      }
+      const plain = fieldNotePlainBody(note.content);
+      if (!plain) throw new ApiError(400, "Write something before sharing this note.");
+
+      const updated = await prisma.fieldNote.update({
+        where: { id },
+        data: {
+          status: "published",
+          publishedAt: note.publishedAt ?? new Date(),
+          publishedById: note.publishedById ?? user.id,
+        },
+        include: noteInclude,
+      });
+      const log = await syncStarstreamLogFromFieldNote(updated, {
+        allowReplies: typeof body.allowReplies === "boolean" ? body.allowReplies : undefined,
+        attachments: body.attachments,
+      });
+      if (!log) throw new ApiError(400, "Could not share field note to Starstream.");
+      const refreshed = await prisma.fieldNote.findUnique({
+        where: { id },
+        include: noteInclude,
+      });
+      return NextResponse.json({
+        note: refreshed,
+        starstreamLogId: log.id,
+      });
+    }
+
+    if (note.authorType === "coco") {
+      throw new ApiError(400, "Coco field notes cannot be edited.");
     }
 
     const status = publicationStatus(body.status) ?? note.status;
@@ -91,11 +145,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         publishedAt,
         publishedById: status === "published" ? (note.publishedById ?? user.id) : null,
       },
-      include: {
-        author: { select: { username: true, displayName: true } },
-        story: { select: { id: true, slug: true, topic: true } },
-        starstreamLog: { select: { id: true, type: true } },
-      },
+      include: noteInclude,
     });
     const synced = await syncStarstreamLogFromFieldNote(updated, {
       allowReplies: typeof body.allowReplies === "boolean" ? body.allowReplies : undefined,

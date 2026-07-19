@@ -155,7 +155,7 @@ counts). The camera follows the player without a scrollbar. Spawn searches for t
 first valid floor position; if none exists, the player is omitted and
 the game view shows a `No floor available` error toast.
 
-The shared renderer is also used by `/home-2d`; its `GameController` owns the
+The shared renderer is also used by `/home`; its `GameController` owns the
 gameplay state and display orchestration while the route page remains a thin
 wrapper. Non-visual NPC conversation state and actor requests live in
 `src/lib/game/npc/useNpcDialogue.ts`; `src/app/components/game/MapRenderer.tsx`
@@ -163,7 +163,9 @@ only adapts that view model into displayable UI.
 That controller loads the published
 map named `myroom`; a missing or failed map load shows an error without
 rendering a canvas, surfaced through the shared React Hot Toast UI instead of
-an inline status panel. Star/NPC load failures (and an empty guest list) use
+an inline status panel. The shared loading screen stays up until the map
+renderer has settled and star characters have finished loading from the voyage
+API. Star/NPC load failures (and an empty guest list) use
 the randomized `NPC_ERROR_LABELS` toast copy; actor/LLM failures during
 conversation use `BACKEND_ERROR_LABELS` toasts and a spoken `...` beat; Space
 closes the conversation instead of opening topics/follow-up. Raw API

@@ -2,22 +2,32 @@
 
 import {
   History as HistoryIcon,
+  ChevronDown,
+  ExternalLink,
   NotebookPen,
   Plus,
   Save,
+  Share2,
+  Ship,
   Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Coco } from "@/app/components/coco";
 import { DialoguePanel } from "@/app/components/dialogue/DialoguePanel";
+import type { DialogueEditableChoice } from "@/app/components/dialogue/DialogueBox";
+import InlineMarkdown from "@/app/components/dialogue/InlineMarkdown";
 import { useUser } from "@/app/components/user/UserProvider";
 import type { DialogueHistoryEntry, Presentable } from "@/lib/dialogue";
 import { formatRelativeTime } from "@/lib/util/format-relative-time";
 import {
+  fieldNoteSourceLabel,
+  fieldNoteSources,
   isPrivateNoteContent,
   privateNoteContent,
+  privateNotePlainText,
 } from "@/lib/learning/field-note-content";
+import { VISITOR_NOTE_HEADER } from "@/lib/learning/starstream-constants";
 import CocoIcon from "@/app/components/icons/CocoIcon";
 import NotesEditor from "./NotesEditor";
 
@@ -41,6 +51,10 @@ type PrivateFieldNote = {
   heading: string;
   createdAt: string;
   authorType?: string | null;
+  sources: string[];
+  status?: string | null;
+  publishedToStarstream?: boolean;
+  starstreamLogId?: string | null;
 };
 
 type PendingNavigation = { kind: "select"; noteId: string } | { kind: "close" };
@@ -51,7 +65,12 @@ type FieldNotePayload = {
   authorType?: string | null;
   title?: string | null;
   content: unknown;
+  sources?: unknown;
+  status?: string | null;
   createdAt: string;
+  publishedToStarstream?: boolean;
+  starstreamLogType?: string | null;
+  starstreamLog?: { id: string; type?: string } | null;
 };
 
 type CocoHistoryEntry = {
@@ -73,8 +92,11 @@ export const COCO_GREETING_OPTIONS = [
   "What caused this historical event?",
   "Who were the key people involved?",
   "How did this moment change what came next?",
-  "Actually, I was wondering about...",
 ] as const;
+
+/** Empty label → DialoguePanel renders only the free-text input (same as /home actor). */
+export const COCO_FREE_TEXT_OPTION = "";
+export const COCO_FREE_TEXT_PLACEHOLDER = "Type in your question here";
 
 export const COCO_FOLLOWUP_LINES = [
   "I can help connect this moment to the wider story, too. Any more questions?",
@@ -99,7 +121,7 @@ export function FieldCompanion({
 }: FieldCompanionProps) {
   const [activePane, setActivePane] = useState<PaneId | null>(null);
   const notesCloseGuardRef = useRef<(() => boolean) | null>(null);
-  /** Coco: return false to keep the overlay open (e.g. paging an answer). */
+  /** Coco: abort in-flight asks on Escape; always allows close. */
   const cocoEscapeGuardRef = useRef<(() => boolean) | null>(null);
 
   useEffect(() => {
@@ -178,7 +200,7 @@ export function FieldCompanion({
 
   return (
     <>
-      <div className="fixed right-5 top-6 z-30 flex flex-col gap-2 sm:right-7 sm:top-8">
+      <div className="fixed right-5 top-20 z-30 flex flex-col gap-2 sm:right-7 sm:top-[5.5rem]">
         <CompanionButton
           active={activePane === "notes"}
           label="Open notes"
@@ -217,7 +239,7 @@ export function FieldCompanion({
             }
           />
           {activePane === "notes" ? (
-            <aside className="fixed inset-y-3 right-3 z-50 flex w-[min(460px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[1.4rem] border border-[#e2d9ce] bg-[#faf8f4] text-[#29241f] shadow-[0_24px_80px_rgba(48,36,24,0.18)] sm:inset-y-5">
+            <aside className="fixed bottom-3 right-3 top-[4.25rem] z-50 flex w-[min(460px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-[1.4rem] border border-[#e2d9ce] bg-[#faf8f4] text-[#29241f] shadow-[0_24px_80px_rgba(48,36,24,0.18)] sm:bottom-5 sm:top-[4.75rem]">
               <NotesPane
                 topic={topic}
                 storyId={storyId}
@@ -348,6 +370,11 @@ function NotesPane({
   const [now, setNow] = useState(() => new Date());
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [shareComposeOpen, setShareComposeOpen] = useState(false);
+  const [commentaryDraft, setCommentaryDraft] = useState("");
+  const [sharing, setSharing] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
   const ignoreEditorChangeRef = useRef(false);
   const draftRef = useRef(draft);
   const baselineRef = useRef(baseline);
@@ -358,6 +385,10 @@ function NotesPane({
   activeIdRef.current = activeId;
 
   const isCreatingNew = activeId === null;
+  const activeNote = activeId
+    ? notes.find((note) => note.id === activeId) ?? null
+    : null;
+  const isCocoNote = activeNote?.authorType === "coco";
   const hasChanges = draft !== baseline;
   const canSaveNew =
     canPersist && isCreatingNew && hasChanges && !isEmptyNote(draft) && !saving;
@@ -450,16 +481,19 @@ function NotesPane({
 
   const persistExisting = async (noteId: string, html: string) => {
     if (!canPersist) return false;
+    const existing = notes.find((note) => note.id === noteId);
+    if (existing?.authorType === "coco") return false;
     setSaving(true);
     setSaveError(null);
     try {
+      const keepPublished = existing?.status === "published";
       const response = await fetch(`/api/field-notes/${noteId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: extractHeading(html),
           content: privateNoteContent(html),
-          status: "draft",
+          status: keepPublished ? "published" : "draft",
         }),
       });
       const payload = (await response.json()) as {
@@ -487,12 +521,14 @@ function NotesPane({
     }
   };
 
-  // Auto-save while editing an existing note.
+  // Auto-save while editing an existing user note.
   useEffect(() => {
     if (!activeId || draft === baseline || ignoreEditorChangeRef.current)
       return;
     if (isEmptyNote(draft) && !isEmptyNote(baseline)) return;
     if (!canPersist) return;
+    const existing = notes.find((note) => note.id === activeId);
+    if (existing?.authorType === "coco") return;
     const noteId = activeId;
     const html = draft;
     const timer = window.setTimeout(() => {
@@ -501,7 +537,7 @@ function NotesPane({
     return () => window.clearTimeout(timer);
     // persistExisting closes over latest setters; intentionally omit from deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce on draft only
-  }, [activeId, baseline, canPersist, draft]);
+  }, [activeId, baseline, canPersist, draft, notes]);
 
   const flushActiveEdits = async () => {
     const noteId = activeIdRef.current;
@@ -509,15 +545,25 @@ function NotesPane({
     const saved = baselineRef.current;
     if (!noteId || html === saved) return true;
     if (isEmptyNote(html) && !isEmptyNote(saved)) return true;
+    const existing = notes.find((note) => note.id === noteId);
+    if (existing?.authorType === "coco") return true;
     return persistExisting(noteId, html);
   };
 
   const loadNote = (note: PrivateFieldNote) => {
+    setSourcesOpen(false);
+    setShareComposeOpen(false);
+    setCommentaryDraft("");
+    setShareError(null);
     beginEditorSession(note.content, note.id);
   };
 
   const startNew = () => {
     void flushActiveEdits().then(() => {
+      setSourcesOpen(false);
+      setShareComposeOpen(false);
+      setCommentaryDraft("");
+      setShareError(null);
       beginEditorSession(DEFAULT_NOTE, null);
     });
   };
@@ -589,6 +635,10 @@ function NotesPane({
       }
     }
     beginEditorSession(DEFAULT_NOTE, null);
+    setSourcesOpen(false);
+    setShareComposeOpen(false);
+    setCommentaryDraft("");
+    setShareError(null);
   };
 
   const requestSelectNote = (noteId: string) => {
@@ -662,17 +712,124 @@ function NotesPane({
     if (requestClose()) onClose();
   };
 
+  const applySharedNote = (
+    noteId: string,
+    payload: { note?: FieldNotePayload; starstreamLogId?: string },
+  ) => {
+    if (!payload.note) return;
+    const saved = toPrivateFieldNote({
+      ...payload.note,
+      publishedToStarstream: true,
+      starstreamLog: payload.starstreamLogId
+        ? { id: payload.starstreamLogId, type: payload.note.starstreamLog?.type }
+        : payload.note.starstreamLog,
+    });
+    setNotes((current) =>
+      current.map((note) => (note.id === noteId ? saved : note)),
+    );
+  };
+
+  const shareUserNote = async () => {
+    if (!activeNote || isCocoNote || sharing || isCreatingNew) return;
+    if (isEmptyNote(draft)) {
+      setShareError("Write something before sharing this note.");
+      return;
+    }
+    setSharing(true);
+    setShareError(null);
+    try {
+      const flushed = await flushActiveEdits();
+      if (!flushed) {
+        throw new Error(saveError ?? "Could not save field note before sharing.");
+      }
+      const response = await fetch(`/api/field-notes/${activeNote.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "share-private-note" }),
+      });
+      const payload = (await response.json()) as {
+        note?: FieldNotePayload;
+        starstreamLogId?: string;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not share to Starstream.");
+      }
+      applySharedNote(activeNote.id, payload);
+    } catch (error) {
+      setShareError(
+        error instanceof Error ? error.message : "Could not share to Starstream.",
+      );
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const shareCocoNote = async () => {
+    if (!activeNote || !isCocoNote || sharing) return;
+    setSharing(true);
+    setShareError(null);
+    try {
+      const response = await fetch(`/api/field-notes/${activeNote.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "publish-visitor-note",
+          ...(commentaryDraft.trim()
+            ? { commentary: commentaryDraft.trim() }
+            : {}),
+        }),
+      });
+      const payload = (await response.json()) as {
+        note?: FieldNotePayload;
+        starstreamLogId?: string;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not share to Starstream.");
+      }
+      applySharedNote(activeNote.id, payload);
+      setShareComposeOpen(false);
+      setCommentaryDraft("");
+    } catch (error) {
+      setShareError(
+        error instanceof Error ? error.message : "Could not share to Starstream.",
+      );
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const statusLabel = (() => {
     if (loadState === "loading") return "Loading field notes…";
     if (loadState === "error")
       return loadError ?? "Could not load field notes.";
+    if (shareError) return shareError;
     if (saveError) return saveError;
     if (!user) return "Sign in to keep your notes";
+    if (sharing) return "Sharing…";
+    if (activeNote?.publishedToStarstream) return "Shared to Starstream";
+    if (isCocoNote) return "From Coco";
     if (saving || (activeId && hasChanges)) return "Saving…";
     if (isCreatingNew) return hasChanges ? "Unsaved draft" : "New field note";
     return "Saved";
   })();
-  const statusIsError = loadState === "error" || Boolean(saveError);
+  const statusIsError =
+    loadState === "error" || Boolean(saveError) || Boolean(shareError);
+  const canShareActive =
+    Boolean(user) &&
+    Boolean(activeNote) &&
+    !isCreatingNew &&
+    !sharing &&
+    !saving &&
+    (isCocoNote
+      ? Boolean(privateNotePlainText(activeNote?.content ?? "").trim())
+      : !isEmptyNote(draft));
+  const sharedLogId = activeNote?.starstreamLogId ?? null;
+  const cocoSources = activeNote ? activeNote.sources : [];
+  const cocoBody = activeNote
+    ? privateNotePlainText(activeNote.content) || "Coco left this note empty."
+    : "";
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
@@ -683,14 +840,73 @@ function NotesPane({
       />
       <div className="scrollbar-pill min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7 sm:py-7">
         <p className="mb-5 max-w-[34ch] text-[13px] leading-6 text-[#877b6e]">
-          A quiet place to collect details, questions, and connections as the
-          story unfolds.
+          {isCocoNote
+            ? "A note Coco saved from your conversation. Sources are listed below."
+            : "A quiet place to collect details, questions, and connections as the story unfolds."}
         </p>
-        <NotesEditor
-          key={editorKey}
-          initialContent={draft}
-          onChange={handleDraftChange}
-        />
+        {isCocoNote ? (
+          <div className="rounded-xl border border-[#e9e2d9] bg-white/50 px-4 py-4">
+            <p className="font-display text-[18px] leading-snug tracking-[-0.02em] text-[#30281f]">
+              {activeNote?.heading || "From Coco"}
+            </p>
+            <p className="mt-3 whitespace-pre-wrap text-[13px] leading-6 text-[#51463b]">
+              <InlineMarkdown>{cocoBody}</InlineMarkdown>
+            </p>
+            {cocoSources.length ? (
+              <div className="mt-4">
+                <button
+                  type="button"
+                  aria-expanded={sourcesOpen}
+                  aria-controls={
+                    activeNote ? `coco-note-sources-${activeNote.id}` : undefined
+                  }
+                  onClick={() => setSourcesOpen((open) => !open)}
+                  className="inline-flex items-center gap-1.5 font-space text-[9px] uppercase tracking-[0.12em] text-[#8a6340] transition hover:text-[#5d432c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
+                >
+                  {cocoSources.length} source
+                  {cocoSources.length === 1 ? "" : "s"}
+                  <ChevronDown
+                    aria-hidden
+                    size={12}
+                    className={`transition-transform ${sourcesOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                {sourcesOpen && activeNote ? (
+                  <ul
+                    id={`coco-note-sources-${activeNote.id}`}
+                    className="mt-2 space-y-1.5 border-t border-[#eee8df] pt-2"
+                  >
+                    {cocoSources.map((url) => (
+                      <li key={url}>
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="group flex items-start gap-2 rounded-md px-1.5 py-1 text-left text-[11px] leading-4 text-[#8a6340] transition hover:bg-[#f5f0e9] hover:text-[#5d432c] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
+                        >
+                          <ExternalLink
+                            aria-hidden
+                            size={11}
+                            className="mt-0.5 shrink-0 text-[#b08a60] transition group-hover:text-[#8a6340]"
+                          />
+                          <span className="min-w-0 break-all">
+                            {fieldNoteSourceLabel(url)}
+                          </span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <NotesEditor
+            key={editorKey}
+            initialContent={draft}
+            onChange={handleDraftChange}
+          />
+        )}
         <div className="mt-4 flex items-center justify-between gap-3">
           <span
             className={`min-w-0 flex-1 truncate text-left font-space text-[9px] uppercase tracking-[0.12em] ${
@@ -703,15 +919,17 @@ function NotesPane({
             {statusLabel}
           </span>
           <div className="flex shrink-0 items-center gap-1">
-            <IconAction
-              label="Save"
-              disabled={!canSaveNew}
-              onClick={() => {
-                void saveNewNote();
-              }}
-            >
-              <Save size={17} strokeWidth={1.7} />
-            </IconAction>
+            {!isCocoNote ? (
+              <IconAction
+                label="Save"
+                disabled={!canSaveNew}
+                onClick={() => {
+                  void saveNewNote();
+                }}
+              >
+                <Save size={17} strokeWidth={1.7} />
+              </IconAction>
+            ) : null}
             {!isCreatingNew ? (
               <IconAction label="New" disabled={saving} onClick={startNew}>
                 <Plus size={17} strokeWidth={1.7} />
@@ -728,8 +946,81 @@ function NotesPane({
             >
               <Trash2 size={17} strokeWidth={1.7} />
             </IconAction>
+            {!isCreatingNew && activeNote && !activeNote.publishedToStarstream ? (
+              <IconAction
+                label="Share"
+                disabled={!canShareActive}
+                onClick={() => {
+                  setShareError(null);
+                  if (isCocoNote) {
+                    setShareComposeOpen(true);
+                    return;
+                  }
+                  void shareUserNote();
+                }}
+              >
+                <Share2 size={17} strokeWidth={1.7} />
+              </IconAction>
+            ) : null}
+            {sharedLogId ? (
+              <a
+                href={`/nexus?section=Starstream&post=${encodeURIComponent(sharedLogId)}`}
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open in Starstream"
+                title="Open in Starstream"
+                className="group relative rounded-full p-2 text-[#29241f] transition-colors hover:bg-[#efe8df] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
+              >
+                <Ship size={17} strokeWidth={1.7} />
+                <span className="pointer-events-none absolute bottom-[calc(100%+0.35rem)] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-white px-2 py-1 font-space text-[9px] uppercase tracking-[0.14em] text-[#6b6258] opacity-0 shadow-[0_4px_14px_rgba(48,36,24,0.12)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  Starstream
+                </span>
+              </a>
+            ) : null}
           </div>
         </div>
+
+        {isCocoNote && shareComposeOpen && !activeNote?.publishedToStarstream ? (
+          <div className="mt-4 space-y-2 rounded-xl border border-[#e9e2d9] bg-white/60 px-4 py-3">
+            <p className="text-[13px] font-semibold leading-5 text-[#30281f]">
+              {VISITOR_NOTE_HEADER}
+            </p>
+            <textarea
+              value={commentaryDraft}
+              onChange={(event) => setCommentaryDraft(event.target.value)}
+              rows={3}
+              placeholder="Add what you think (optional)"
+              className="w-full resize-y rounded-lg border border-[#e2d9ce] bg-[#faf8f4] px-3 py-2 text-[12px] leading-5 text-[#29241f] outline-none placeholder:text-[#a59a8c] focus:border-[#96734d] focus:ring-2 focus:ring-[#96734d]/20"
+            />
+            {shareError ? (
+              <p className="text-[11px] text-[#8a3b2c]" role="alert">
+                {shareError}
+              </p>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShareComposeOpen(false);
+                  setCommentaryDraft("");
+                  setShareError(null);
+                }}
+                disabled={sharing}
+                className="min-h-8 rounded-lg px-2.5 font-space text-[9px] uppercase tracking-[0.12em] text-[#6b6258] transition hover:bg-[#efe8df] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void shareCocoNote()}
+                disabled={sharing}
+                className="min-h-8 rounded-lg bg-[#33281d] px-2.5 font-space text-[9px] uppercase tracking-[0.12em] text-[#fffaf2] transition hover:bg-[#60462f] disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
+              >
+                {sharing ? "Sharing…" : "Share to Starstream"}
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {notes.length > 0 ? (
           <ul className="mt-6 space-y-1.5" aria-label="Private field notes">
@@ -826,6 +1117,7 @@ function toPrivateFieldNote(note: FieldNotePayload): PrivateFieldNote {
   const html = isPrivateNoteContent(note.content)
     ? note.content.html
     : DEFAULT_NOTE;
+  const logId = note.starstreamLog?.id ?? null;
   return {
     id: note.id,
     content: html,
@@ -834,6 +1126,10 @@ function toPrivateFieldNote(note: FieldNotePayload): PrivateFieldNote {
       extractHeading(html),
     createdAt: note.createdAt,
     authorType: note.authorType,
+    sources: fieldNoteSources(note.sources),
+    status: note.status,
+    publishedToStarstream: Boolean(note.publishedToStarstream ?? logId),
+    starstreamLogId: logId,
   };
 }
 
@@ -926,17 +1222,14 @@ function CocoStage({
   const [dialogueIndex, setDialogueIndex] = useState(0);
   const [isThinking, setIsThinking] = useState(false);
   const [showOptions, setShowOptions] = useState(true);
+  const [freeText, setFreeText] = useState("");
   const [history, setHistory] = useState<CocoHistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
   const isThinkingRef = useRef(false);
-  const showOptionsRef = useRef(true);
-  /** When true, reset idle greeting only after the overlay is hidden (no flash). */
-  const resetWhenHiddenRef = useRef(false);
 
   isThinkingRef.current = isThinking;
-  showOptionsRef.current = showOptions;
 
   const abortInFlight = useCallback(() => {
     abortRef.current?.abort();
@@ -948,29 +1241,23 @@ function CocoStage({
 
   const resetDialogue = useCallback(() => {
     abortInFlight();
-    resetWhenHiddenRef.current = false;
     setDialogueNodes([greeting]);
     setDialogueIndex(0);
     setShowOptions(true);
+    setFreeText("");
   }, [abortInFlight, greeting]);
 
-  // After cancel/close: reset idle state only once hidden so greeting never flashes.
+  // Reset once hidden so a mid-answer close never resurfaces answer + options.
   useEffect(() => {
     if (visible) return;
-    if (!resetWhenHiddenRef.current && !abortRef.current) return;
     resetDialogue();
   }, [visible, resetDialogue]);
 
   useEffect(() => {
+    // Escape always closes; abort any in-flight ask so reopen starts at greeting.
     escapeGuardRef.current = () => {
-      // Paging through an already-generated answer — keep the overlay open.
-      if (!isThinkingRef.current && !showOptionsRef.current) {
-        return false;
-      }
-      // Still waiting on the model — cancel now; reset greeting after hide.
       if (isThinkingRef.current || abortRef.current) {
         abortInFlight();
-        resetWhenHiddenRef.current = true;
       }
       return true;
     };
@@ -1010,13 +1297,15 @@ function CocoStage({
   };
 
   const askCoco = async (question: string) => {
+    const trimmed = question.trim();
+    if (!trimmed) return;
     abortRef.current?.abort();
     requestIdRef.current += 1;
     const controller = new AbortController();
     const requestId = requestIdRef.current;
     abortRef.current = controller;
-    resetWhenHiddenRef.current = false;
     setShowOptions(false);
+    setFreeText("");
     setIsThinking(true);
     isThinkingRef.current = true;
     const thinkingIndex = Math.floor(
@@ -1030,15 +1319,15 @@ function CocoStage({
         headers: { "Content-Type": "application/json" },
         signal: controller.signal,
         body: JSON.stringify({
-          question,
+          question: trimmed,
           context: {
             topic,
             storyId,
             assignmentId,
             ...(COCO_GREETING_OPTIONS.includes(
-              question as (typeof COCO_GREETING_OPTIONS)[number],
+              trimmed as (typeof COCO_GREETING_OPTIONS)[number],
             )
-              ? { prefilledOption: question }
+              ? { prefilledOption: trimmed }
               : {}),
             currentDialogue: dialoguePoint,
             speaker,
@@ -1068,7 +1357,7 @@ function CocoStage({
       setHistory((entries) => [
         ...entries,
         {
-          question,
+          question: trimmed,
           answer: payload.answer!,
           citations: payload.citations,
           sources: payload.sources,
@@ -1115,7 +1404,6 @@ function CocoStage({
   const handleClose = () => {
     if (isThinkingRef.current || abortRef.current) {
       abortInFlight();
-      resetWhenHiddenRef.current = true;
     }
     onClose();
   };
@@ -1132,6 +1420,17 @@ function CocoStage({
           (dialogueIndex < dialogueNodes.length - 1 || !showOptions)
         }
         options={showOptions && !isThinking ? COCO_GREETING_OPTIONS : undefined}
+        editableChoice={
+          showOptions && !isThinking
+            ? {
+                label: COCO_FREE_TEXT_OPTION,
+                value: freeText,
+                placeholder: COCO_FREE_TEXT_PLACEHOLDER,
+                onChange: setFreeText,
+                onSubmit: () => void askCoco(freeText),
+              }
+            : undefined
+        }
         onOption={(option) => void askCoco(option)}
         onContinue={advanceDialogue}
         onSpeechDone={(done) => {
@@ -1177,7 +1476,7 @@ function CocoHistoryPanel({
   onClose: () => void;
 }) {
   return (
-    <aside className="pointer-events-auto fixed inset-y-6 right-6 z-[70] flex w-[min(25rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-[#e2d9ce] bg-[#faf8f4] text-[#29241f] shadow-[0_24px_80px_rgba(48,36,24,0.2)]">
+    <aside className="pointer-events-auto fixed bottom-6 right-6 top-20 z-[70] flex w-[min(25rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-[#e2d9ce] bg-[#faf8f4] text-[#29241f] shadow-[0_24px_80px_rgba(48,36,24,0.2)]">
       <header className="flex items-center justify-between border-b border-[#e9e2d9] px-5 py-4">
         <div>
           <p className="font-space text-[9px] uppercase tracking-[0.2em] text-[#9a8d7d]">
@@ -1214,7 +1513,7 @@ function CocoHistoryPanel({
                       key={`${nodeIndex}-${node}`}
                       className={nodeIndex ? "mt-3" : ""}
                     >
-                      {node.trim()}
+                      <InlineMarkdown>{node.trim()}</InlineMarkdown>
                     </p>
                   ))}
                 </div>
@@ -1255,6 +1554,7 @@ function CocoSpeech({
   text,
   canContinue = false,
   options,
+  editableChoice,
   onOption,
   onContinue,
   onSpeechDone,
@@ -1265,6 +1565,7 @@ function CocoSpeech({
   text: string;
   canContinue?: boolean;
   options?: readonly string[];
+  editableChoice?: DialogueEditableChoice;
   onOption?: (option: string) => void;
   onContinue?: () => void;
   onSpeechDone?: (done: boolean) => void;
@@ -1273,7 +1574,9 @@ function CocoSpeech({
   const typingGateRef = useRef({ done: false, skip: () => undefined });
   const panelRef = useRef<HTMLDivElement>(null);
   const [speechDone, setSpeechDone] = useState(false);
-  const hasOptions = Boolean(options?.length && onOption);
+  const hasOptions = Boolean(
+    (options?.length && onOption) || editableChoice,
+  );
   // If options arrive after the current line already finished typing (answer →
   // follow-up choices), show the prompt instantly so it doesn't retype.
   const promptTypingEnabled = !(hasOptions && speechDone);
@@ -1327,7 +1630,7 @@ function CocoSpeech({
         kind: "choice",
         id: "coco-options",
         prompt: text,
-        choices: options!.map((option, index) => ({
+        choices: (options ?? []).map((option, index) => ({
           index,
           label: option,
         })),
@@ -1349,7 +1652,7 @@ function CocoSpeech({
           type="button"
           aria-label="Close Coco"
           onClick={onClose}
-          className="pointer-events-auto fixed right-5 top-5 rounded-full bg-[#faf8f4] p-2 text-[#968a7b] shadow-[0_8px_24px_rgba(48,36,24,0.12)] transition-colors hover:text-[#30281f] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
+          className="pointer-events-auto fixed right-5 top-[4.75rem] rounded-full bg-[#faf8f4] p-2 text-[#968a7b] shadow-[0_8px_24px_rgba(48,36,24,0.12)] transition-colors hover:text-[#30281f] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#96734d]"
         >
           <X size={18} strokeWidth={1.7} />
         </button>
@@ -1377,6 +1680,7 @@ function CocoSpeech({
           typingGateRef={typingGateRef}
           typingEnabled={promptTypingEnabled}
           showHint={false}
+          richText
           onTypingChange={handleTypingChange}
           onAdvance={() => onContinue?.()}
           onChoose={(index) => {
@@ -1384,6 +1688,7 @@ function CocoSpeech({
             if (option) onOption?.(option);
           }}
           onRestart={() => undefined}
+          editableChoice={editableChoice}
         />
         {!speechDone ? (
           <p className="font-space text-[10px] uppercase tracking-[0.16em] text-[#9a8d7d]">

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { assertAssignmentVisible, assertPublishedTargetStory, assignmentAccessInclude, assignmentIncludesStory, findAssignmentForAccess } from "@/lib/learning/access";
 import { ApiError, errorResponse, jsonInput, parseJsonBody, requireDemoUser, requiredText } from "@/lib/learning/api";
+import { isVoyageCompletionNote } from "@/lib/learning/field-note-content";
 
 export const runtime = "nodejs";
 
@@ -58,8 +59,19 @@ export async function POST(request: Request) {
     }
     if (body.completed === true) {
       if (assignment) {
-        const note = await prisma.fieldNote.findFirst({ where: { assignmentId: assignment.id, storyId, authorId: user.id, status: "published" }, select: { id: true } });
-        if (!note) throw new ApiError(400, "Publish a field note before completing this voyage.");
+        const notes = await prisma.fieldNote.findMany({
+          where: {
+            assignmentId: assignment.id,
+            storyId,
+            authorId: user.id,
+            status: "published",
+            authorType: "user",
+          },
+          select: { content: true, status: true, authorType: true },
+        });
+        if (!notes.some((note) => isVoyageCompletionNote(note))) {
+          throw new ApiError(400, "Publish a field note before completing this voyage.");
+        }
       }
     }
     if (body.progress === undefined) throw new ApiError(400, "progress is required.");
