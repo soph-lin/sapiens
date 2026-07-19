@@ -6,17 +6,38 @@ import { Fragment, type ReactNode } from "react";
  * Incomplete markers (while typewriting) remain literal until closed.
  */
 export function renderInlineMarkdown(source: string): ReactNode {
-  if (!source) return null;
+  return renderInlineMarkdownBudget(source, { left: Number.POSITIVE_INFINITY });
+}
+
+/**
+ * Reveal the first `visibleChars` plain characters of inline markdown.
+ * Markers are never shown; emphasis applies as soon as those letters appear.
+ */
+export function renderInlineMarkdownTyped(
+  source: string,
+  visibleChars: number,
+): ReactNode {
+  if (visibleChars <= 0) return null;
+  return renderInlineMarkdownBudget(source, { left: visibleChars });
+}
+
+function renderInlineMarkdownBudget(
+  source: string,
+  budget: { left: number },
+): ReactNode {
+  if (!source || budget.left <= 0) return null;
   const nodes: ReactNode[] = [];
   let i = 0;
   let key = 0;
 
   const pushText = (value: string) => {
-    if (!value) return;
-    nodes.push(<Fragment key={key++}>{value}</Fragment>);
+    if (!value || budget.left <= 0) return;
+    const slice = value.slice(0, budget.left);
+    budget.left -= slice.length;
+    if (slice) nodes.push(<Fragment key={key++}>{slice}</Fragment>);
   };
 
-  while (i < source.length) {
+  while (i < source.length && budget.left > 0) {
     const ch = source[i]!;
 
     // Treat HTML-like tags as opaque literal runs.
@@ -32,11 +53,17 @@ export function renderInlineMarkdown(source: string): ReactNode {
     if (source.startsWith("**", i)) {
       const close = source.indexOf("**", i + 2);
       if (close !== -1) {
-        nodes.push(
-          <strong key={key++} className="font-semibold">
-            {renderInlineMarkdown(source.slice(i + 2, close))}
-          </strong>,
+        const inner = renderInlineMarkdownBudget(
+          source.slice(i + 2, close),
+          budget,
         );
+        if (inner != null) {
+          nodes.push(
+            <strong key={key++} className="font-semibold">
+              {inner}
+            </strong>,
+          );
+        }
         i = close + 2;
         continue;
       }
@@ -45,27 +72,33 @@ export function renderInlineMarkdown(source: string): ReactNode {
     if (source.startsWith("__", i)) {
       const close = source.indexOf("__", i + 2);
       if (close !== -1) {
-        nodes.push(
-          <strong key={key++} className="font-semibold">
-            {renderInlineMarkdown(source.slice(i + 2, close))}
-          </strong>,
+        const inner = renderInlineMarkdownBudget(
+          source.slice(i + 2, close),
+          budget,
         );
+        if (inner != null) {
+          nodes.push(
+            <strong key={key++} className="font-semibold">
+              {inner}
+            </strong>,
+          );
+        }
         i = close + 2;
         continue;
       }
     }
 
     // *italic* (single asterisks; not part of **)
-    if (
-      ch === "*" &&
-      source[i + 1] !== "*" &&
-      source[i - 1] !== "*"
-    ) {
+    if (ch === "*" && source[i + 1] !== "*" && source[i - 1] !== "*") {
       const close = findSingleMarkerClose(source, i, "*");
       if (close !== -1) {
-        nodes.push(
-          <em key={key++}>{renderInlineMarkdown(source.slice(i + 1, close))}</em>,
+        const inner = renderInlineMarkdownBudget(
+          source.slice(i + 1, close),
+          budget,
         );
+        if (inner != null) {
+          nodes.push(<em key={key++}>{inner}</em>);
+        }
         i = close + 1;
         continue;
       }
@@ -77,11 +110,13 @@ export function renderInlineMarkdown(source: string): ReactNode {
       if (!prev || /\s|[([{"']/.test(prev)) {
         const close = findUnderscoreItalicClose(source, i);
         if (close !== -1) {
-          nodes.push(
-            <em key={key++}>
-              {renderInlineMarkdown(source.slice(i + 1, close))}
-            </em>,
+          const inner = renderInlineMarkdownBudget(
+            source.slice(i + 1, close),
+            budget,
           );
+          if (inner != null) {
+            nodes.push(<em key={key++}>{inner}</em>);
+          }
           i = close + 1;
           continue;
         }
@@ -105,7 +140,7 @@ export function renderInlineMarkdown(source: string): ReactNode {
     i = end;
   }
 
-  return nodes;
+  return nodes.length > 0 ? nodes : null;
 }
 
 /** Visible text for aria labels / plain fallbacks (markers stripped, tags kept). */

@@ -121,7 +121,7 @@ export function FieldCompanion({
 }: FieldCompanionProps) {
   const [activePane, setActivePane] = useState<PaneId | null>(null);
   const notesCloseGuardRef = useRef<(() => boolean) | null>(null);
-  /** Coco: return false to keep the overlay open (e.g. paging an answer). */
+  /** Coco: abort in-flight asks on Escape; always allows close. */
   const cocoEscapeGuardRef = useRef<(() => boolean) | null>(null);
 
   useEffect(() => {
@@ -1228,12 +1228,8 @@ function CocoStage({
   const abortRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
   const isThinkingRef = useRef(false);
-  const showOptionsRef = useRef(true);
-  /** When true, reset idle greeting only after the overlay is hidden (no flash). */
-  const resetWhenHiddenRef = useRef(false);
 
   isThinkingRef.current = isThinking;
-  showOptionsRef.current = showOptions;
 
   const abortInFlight = useCallback(() => {
     abortRef.current?.abort();
@@ -1245,30 +1241,23 @@ function CocoStage({
 
   const resetDialogue = useCallback(() => {
     abortInFlight();
-    resetWhenHiddenRef.current = false;
     setDialogueNodes([greeting]);
     setDialogueIndex(0);
     setShowOptions(true);
     setFreeText("");
   }, [abortInFlight, greeting]);
 
-  // After cancel/close: reset idle state only once hidden so greeting never flashes.
+  // Reset once hidden so a mid-answer close never resurfaces answer + options.
   useEffect(() => {
     if (visible) return;
-    if (!resetWhenHiddenRef.current && !abortRef.current) return;
     resetDialogue();
   }, [visible, resetDialogue]);
 
   useEffect(() => {
+    // Escape always closes; abort any in-flight ask so reopen starts at greeting.
     escapeGuardRef.current = () => {
-      // Paging through an already-generated answer — keep the overlay open.
-      if (!isThinkingRef.current && !showOptionsRef.current) {
-        return false;
-      }
-      // Still waiting on the model — cancel now; reset greeting after hide.
       if (isThinkingRef.current || abortRef.current) {
         abortInFlight();
-        resetWhenHiddenRef.current = true;
       }
       return true;
     };
@@ -1315,7 +1304,6 @@ function CocoStage({
     const controller = new AbortController();
     const requestId = requestIdRef.current;
     abortRef.current = controller;
-    resetWhenHiddenRef.current = false;
     setShowOptions(false);
     setFreeText("");
     setIsThinking(true);
@@ -1416,7 +1404,6 @@ function CocoStage({
   const handleClose = () => {
     if (isThinkingRef.current || abortRef.current) {
       abortInFlight();
-      resetWhenHiddenRef.current = true;
     }
     onClose();
   };

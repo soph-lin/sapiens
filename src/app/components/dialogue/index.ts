@@ -10,6 +10,7 @@ export { DialoguePanel } from "./DialoguePanel";
 export {
   default as InlineMarkdown,
   renderInlineMarkdown,
+  renderInlineMarkdownTyped,
   stripInlineMarkdown,
 } from "./InlineMarkdown";
 export { StoryDialogue } from "./StoryDialogue";

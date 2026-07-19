@@ -15,7 +15,7 @@ Educational exploration game: players learn by exploring interactive worlds, inv
 - `.brain/team/TEAM.md` — feature team workflow and role handoffs.
 - `src/app/` — Next.js application code.
 
-DO not read or edit `/bin` it is where the rejected ideas live...
+Do NOT read or edit `/bin` it is where the rejected ideas live...
 
 ## Dev
 

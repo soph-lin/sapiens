@@ -2,6 +2,7 @@
 
 import {
   useEffect,
+  useEffectEvent,
   useRef,
   useState,
   type CSSProperties,
@@ -68,6 +69,11 @@ type DialogueBoxProps = {
   onRestart: () => void;
   /** Body text size. Default `lg`. */
   size?: DialogueBoxSize;
+  /**
+   * When false, digit quick-keys do not select choices (e.g. story under an
+   * overlay that owns keyboard). Default true.
+   */
+  keyboardEnabled?: boolean;
   /** When false, choice prompts appear instantly (no typewriter). Default true. */
   typingEnabled?: boolean;
   onTypingChange?: (done: boolean) => void;
@@ -76,6 +82,24 @@ type DialogueBoxProps = {
   editableChoice?: DialogueEditableChoice;
   dropdownChoice?: DialogueDropdownChoice;
 };
+
+function isEditingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)
+  );
+}
+
+/** Map Digit/Numpad 1–9 to a 0-based choice order, or null if not a quick-key. */
+function choiceOrderFromDigitKey(key: string, code: string): number | null {
+  if (key.length === 1 && key >= "1" && key <= "9") {
+    return Number(key) - 1;
+  }
+  const numpad = /^Numpad([1-9])$/.exec(code);
+  if (numpad) return Number(numpad[1]) - 1;
+  return null;
+}
 
 export function dialogueContinueHint(
   view: Presentable,
@@ -95,6 +119,7 @@ export function DialogueBox({
   onChoose,
   onRestart,
   size = "lg",
+  keyboardEnabled = true,
   typingEnabled = true,
   onTypingChange,
   richText = false,
@@ -132,6 +157,7 @@ export function DialogueBox({
         richText={richText}
         onChoose={onChoose}
         typingGateRef={typingGateRef}
+        keyboardEnabled={keyboardEnabled}
         typingEnabled={typingEnabled}
         onTypingChange={onTypingChange}
         editableChoice={editableChoice}
@@ -226,7 +252,11 @@ function TextBeat({
   richText?: boolean;
   onTypingChange?: (done: boolean) => void;
 }) {
-  const { displayed, done, skip } = useTypewriter(text);
+  const { displayed, visibleLength, done, skip } = useTypewriter(
+    text,
+    true,
+    richText,
+  );
   useTypingGate(typingGateRef, done, skip);
   useEffect(() => {
     onTypingChange?.(done);
@@ -248,6 +278,7 @@ function TextBeat({
       <TypewriterLine
         text={text}
         displayed={displayed}
+        visibleLength={visibleLength}
         done={done}
         className={theme.body}
         style={bodyFontStyle(size)}
@@ -263,6 +294,7 @@ function ChoiceBeat({
   choices,
   onChoose,
   typingGateRef,
+  keyboardEnabled = true,
   typingEnabled = true,
   onTypingChange,
   theme,
@@ -275,6 +307,7 @@ function ChoiceBeat({
   choices: Array<{ index: number; label: string }>;
   onChoose: (index: number) => void;
   typingGateRef: TypingGateRef;
+  keyboardEnabled?: boolean;
   typingEnabled?: boolean;
   onTypingChange?: (done: boolean) => void;
   theme: DialogueTheme;
@@ -284,7 +317,11 @@ function ChoiceBeat({
   dropdownChoice?: DialogueDropdownChoice;
 }) {
   const promptText = prompt ?? "What do you do?";
-  const { displayed, done, skip } = useTypewriter(promptText, typingEnabled);
+  const { displayed, visibleLength, done, skip } = useTypewriter(
+    promptText,
+    typingEnabled,
+    richText,
+  );
   useTypingGate(typingGateRef, done, skip);
   useEffect(() => {
     onTypingChange?.(done);
@@ -295,6 +332,8 @@ function ChoiceBeat({
   const hasEditableChoice = editableChoice !== undefined;
   const hasDropdownChoice = dropdownChoice !== undefined;
   const hasComplexChoice = hasEditableChoice || hasDropdownChoice;
+  const optionCount = choices.length + (hasComplexChoice ? 1 : 0);
+  const showChoiceIndex = optionCount > 1;
   const [focusReset, setFocusReset] = useState({ done, choicesKey });
 
   if (done !== focusReset.done || choicesKey !== focusReset.choicesKey) {
@@ -340,6 +379,39 @@ function ChoiceBeat({
       `[data-choice-index="${wrapped}"]`,
     )?.focus();
   };
+
+  const activateChoiceByOrder = useEffectEvent((order: number) => {
+    const total = choices.length + (hasComplexChoice ? 1 : 0);
+    if (order < 0 || order >= total) return false;
+    if (order < choices.length) {
+      onChoose(choices[order].index);
+      return true;
+    }
+    // Complex free-text / dropdown slot: focus it (do not auto-submit).
+    focusChoice(order);
+    return true;
+  });
+
+  // Digit 1–9 quick-select: same labels shown beside each option. Capture-phase
+  // so it works even when focus is on the document body (not the listbox).
+  useEffect(() => {
+    if (!done || !keyboardEnabled) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (isEditingTarget(event.target)) return;
+
+      const order = choiceOrderFromDigitKey(event.key, event.code);
+      if (order === null) return;
+      if (!activateChoiceByOrder(order)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [done, keyboardEnabled]);
 
   const onListKeyDown = (event: ReactKeyboardEvent<HTMLUListElement>) => {
     if (event.defaultPrevented) return;
@@ -418,6 +490,7 @@ function ChoiceBeat({
         <TypewriterLine
           text={promptText}
           displayed={displayed}
+          visibleLength={visibleLength}
           done={done}
           className={theme.body}
           style={bodyFontStyle(size)}
@@ -450,17 +523,19 @@ function ChoiceBeat({
                   tabIndex={selected ? 0 : -1}
                   onFocus={() => setActiveIndex(order)}
                   onClick={() => onChoose(choice.index)}
-                  className={`group flex w-full items-start gap-5 rounded-sm px-4 py-4 text-left outline-none transition-colors duration-300 ease-out ${
-                    selected ? theme.choiceSelected : theme.choiceIdle
-                  }`}
+                  className={`group flex w-full items-start rounded-sm px-4 py-4 text-left outline-none transition-colors duration-300 ease-out ${
+                    showChoiceIndex ? "gap-5" : ""
+                  } ${selected ? theme.choiceSelected : theme.choiceIdle}`}
                 >
-                  <span
-                    className={`mt-0.5 w-6 shrink-0 text-[12px] tabular-nums tracking-[0.12em] transition-colors duration-300 ${
-                      selected ? theme.choiceIndexSelected : theme.choiceIndex
-                    }`}
-                  >
-                    {String(order + 1).padStart(2, "0")}
-                  </span>
+                  {showChoiceIndex ? (
+                    <span
+                      className={`mt-0.5 w-6 shrink-0 text-[12px] tabular-nums tracking-[0.12em] transition-colors duration-300 ${
+                        selected ? theme.choiceIndexSelected : theme.choiceIndex
+                      }`}
+                    >
+                      {String(order + 1).padStart(2, "0")}
+                    </span>
+                  ) : null}
                   <span
                     className={`text-[1.05rem] leading-snug transition-colors duration-300 sm:text-[1.125rem] ${
                       selected ? theme.choiceLabelSelected : theme.choiceLabel
@@ -481,11 +556,15 @@ function ChoiceBeat({
                 data-editable-choice-option
                 tabIndex={activeIndex === choices.length ? 0 : -1}
                 onFocus={() => setActiveIndex(choices.length)}
-                className={`group flex w-full items-start gap-5 rounded-sm px-4 py-4 text-left outline-none transition-colors duration-300 ease-out ${activeIndex === choices.length ? theme.choiceSelected : theme.choiceIdle}`}
+                className={`group flex w-full items-start rounded-sm px-4 py-4 text-left outline-none transition-colors duration-300 ease-out ${
+                  showChoiceIndex ? "gap-5" : ""
+                } ${activeIndex === choices.length ? theme.choiceSelected : theme.choiceIdle}`}
               >
-                <span className={`mt-0.5 w-6 shrink-0 text-[12px] tabular-nums tracking-[0.12em] ${activeIndex === choices.length ? theme.choiceIndexSelected : theme.choiceIndex}`}>
-                  {String(choices.length + 1).padStart(2, "0")}
-                </span>
+                {showChoiceIndex ? (
+                  <span className={`mt-0.5 w-6 shrink-0 text-[12px] tabular-nums tracking-[0.12em] ${activeIndex === choices.length ? theme.choiceIndexSelected : theme.choiceIndex}`}>
+                    {String(choices.length + 1).padStart(2, "0")}
+                  </span>
+                ) : null}
                 <span className={`min-w-0 flex-1 text-[1.05rem] leading-snug ${theme.choiceLabel}`} style={secondaryFontStyle(size)}>
                   {editableChoice.label.trim() ? (
                     <span className="block">{editableChoice.label}</span>
@@ -605,11 +684,15 @@ function ChoiceBeat({
                     dropdownChoice.onToggle();
                   }
                 }}
-                className={`group flex w-full items-start gap-5 rounded-sm px-4 py-4 text-left outline-none transition-colors duration-300 ease-out ${activeIndex === choices.length ? theme.choiceSelected : theme.choiceIdle}`}
+                className={`group flex w-full items-start rounded-sm px-4 py-4 text-left outline-none transition-colors duration-300 ease-out ${
+                  showChoiceIndex ? "gap-5" : ""
+                } ${activeIndex === choices.length ? theme.choiceSelected : theme.choiceIdle}`}
               >
-                <span className={`mt-0.5 w-6 shrink-0 text-[12px] tabular-nums tracking-[0.12em] ${activeIndex === choices.length ? theme.choiceIndexSelected : theme.choiceIndex}`}>
-                  {String(choices.length + 1).padStart(2, "0")}
-                </span>
+                {showChoiceIndex ? (
+                  <span className={`mt-0.5 w-6 shrink-0 text-[12px] tabular-nums tracking-[0.12em] ${activeIndex === choices.length ? theme.choiceIndexSelected : theme.choiceIndex}`}>
+                    {String(choices.length + 1).padStart(2, "0")}
+                  </span>
+                ) : null}
                 <span className={`min-w-0 flex-1 text-[1.05rem] leading-snug ${activeIndex === choices.length ? theme.choiceLabelSelected : theme.choiceLabel}`} style={secondaryFontStyle(size)}>
                   <span className="block">{dropdownChoice.label}</span>
                   {dropdownChoice.expanded ? (
@@ -669,7 +752,11 @@ function EndBeat({
   size: DialogueBoxSize;
   richText?: boolean;
 }) {
-  const { displayed, done, skip } = useTypewriter(text);
+  const { displayed, visibleLength, done, skip } = useTypewriter(
+    text,
+    true,
+    richText,
+  );
   useTypingGate(typingGateRef, done, skip);
 
   return (
@@ -689,6 +776,7 @@ function EndBeat({
         <TypewriterLine
           text={text}
           displayed={displayed}
+          visibleLength={visibleLength}
           done={done}
           className={theme.bodyMuted}
           style={secondaryFontStyle(size)}

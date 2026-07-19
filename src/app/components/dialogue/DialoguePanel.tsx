@@ -24,6 +24,7 @@ function DialogueBoxWithHint({
   onRestart,
   size,
   showHint,
+  keyboardEnabled,
   typingEnabled,
   onTypingChange,
   richText,
@@ -38,6 +39,7 @@ function DialogueBoxWithHint({
   onRestart: () => void;
   size?: DialogueBoxSize;
   showHint?: boolean;
+  keyboardEnabled?: boolean;
   typingEnabled?: boolean;
   onTypingChange?: (done: boolean) => void;
   richText?: boolean;
@@ -65,6 +67,7 @@ function DialogueBoxWithHint({
         onChoose={onChoose}
         onRestart={onRestart}
         size={size}
+        keyboardEnabled={keyboardEnabled}
         typingEnabled={typingEnabled}
         onTypingChange={handleTypingChange}
         richText={richText}
@@ -256,6 +259,7 @@ export function DialoguePanel({
           onRestart={onRestart}
           size={size}
           showHint={showHint}
+          keyboardEnabled={keyboardEnabled}
           typingEnabled={typingEnabled}
           onTypingChange={onTypingChange}
           richText={richText}

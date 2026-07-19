@@ -10,6 +10,7 @@ import {
 import type { DialogueTheme } from "./theme";
 import {
   renderInlineMarkdown,
+  renderInlineMarkdownTyped,
   stripInlineMarkdown,
 } from "./InlineMarkdown";
 
@@ -26,28 +27,41 @@ export function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function useTypewriter(text: string, enabled = true) {
-  const instant = !enabled || text.length === 0 || prefersReducedMotion();
+export function useTypewriter(
+  text: string,
+  enabled = true,
+  richText = false,
+) {
+  // Rich text types by visible letters so `**` / `_` never consume ticks or flash.
+  const typedSource = richText ? stripInlineMarkdown(text) : text;
+  const instant =
+    !enabled || typedSource.length === 0 || prefersReducedMotion();
   const [visibleLength, setVisibleLength] = useState(() =>
-    instant ? text.length : 0,
+    instant ? typedSource.length : 0,
   );
   const [done, setDone] = useState(() => instant);
-  const [resetKey, setResetKey] = useState({ text, enabled });
+  const [resetKey, setResetKey] = useState({ text, enabled, richText });
   const skippedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  if (text !== resetKey.text || enabled !== resetKey.enabled) {
-    setResetKey({ text, enabled });
+  if (
+    text !== resetKey.text ||
+    enabled !== resetKey.enabled ||
+    richText !== resetKey.richText
+  ) {
+    setResetKey({ text, enabled, richText });
+    const nextSource = richText ? stripInlineMarkdown(text) : text;
     const nextInstant =
-      !enabled || text.length === 0 || prefersReducedMotion();
-    setVisibleLength(nextInstant ? text.length : 0);
+      !enabled || nextSource.length === 0 || prefersReducedMotion();
+    setVisibleLength(nextInstant ? nextSource.length : 0);
     setDone(nextInstant);
   }
 
   useEffect(() => {
     skippedRef.current = false;
+    const source = richText ? stripInlineMarkdown(text) : text;
 
-    if (!enabled || prefersReducedMotion() || text.length === 0) {
+    if (!enabled || prefersReducedMotion() || source.length === 0) {
       return;
     }
 
@@ -64,12 +78,12 @@ export function useTypewriter(text: string, enabled = true) {
       if (skippedRef.current) return;
       index += 1;
       setVisibleLength(index);
-      if (index >= text.length) {
+      if (index >= source.length) {
         setDone(true);
         timerRef.current = null;
         return;
       }
-      const ch = text[index - 1] ?? "";
+      const ch = source[index - 1] ?? "";
       const delay =
         ch === "." || ch === "!" || ch === "?" || ch === "—" || ch === ","
           ? CHAR_MS + PUNCT_PAUSE_MS
@@ -79,7 +93,7 @@ export function useTypewriter(text: string, enabled = true) {
 
     timerRef.current = setTimeout(tick, CHAR_MS);
     return clearTimer;
-  }, [text, enabled]);
+  }, [text, enabled, richText]);
 
   const skip = () => {
     skippedRef.current = true;
@@ -87,12 +101,14 @@ export function useTypewriter(text: string, enabled = true) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    setVisibleLength(text.length);
+    const source = richText ? stripInlineMarkdown(text) : text;
+    setVisibleLength(source.length);
     setDone(true);
   };
 
   return {
-    displayed: text.slice(0, visibleLength),
+    displayed: typedSource.slice(0, visibleLength),
+    visibleLength,
     done,
     skip,
   };
@@ -135,12 +151,13 @@ export function TypeCaret({
 /**
  * Typewriter copy that sizes to the final text height immediately, so the
  * box does not grow line-by-line as characters appear.
- * When `richText` is true, completed `**bold**` / `*italic*` / `_italic_`
- * markers render as emphasis; HTML-like tags stay literal text.
+ * When `richText` is true, letters type out already bold/italic; markers never
+ * appear. HTML-like tags stay literal text.
  */
 export function TypewriterLine({
   text,
   displayed,
+  visibleLength,
   done,
   className,
   style,
@@ -150,6 +167,7 @@ export function TypewriterLine({
 }: {
   text: string;
   displayed: string;
+  visibleLength?: number;
   done: boolean;
   className: string;
   style?: CSSProperties;
@@ -157,17 +175,20 @@ export function TypewriterLine({
   caretTone?: "dark" | "muted";
   richText?: boolean;
 }) {
-  const render = (value: string) =>
-    richText ? renderInlineMarkdown(value) : value;
+  const typedLength = visibleLength ?? displayed.length;
+  const live = richText
+    ? renderInlineMarkdownTyped(text, typedLength)
+    : displayed;
+  const full = richText ? renderInlineMarkdown(text) : text;
   const label = richText ? stripInlineMarkdown(text) : text;
 
   return (
     <p className={`relative ${className}`} style={style} aria-label={label}>
       <span aria-hidden className="invisible block">
-        {render(text)}
+        {full}
       </span>
       <span aria-hidden className="absolute inset-0">
-        {render(displayed)}
+        {live}
         {!done ? <TypeCaret theme={theme} tone={caretTone} /> : null}
       </span>
     </p>
