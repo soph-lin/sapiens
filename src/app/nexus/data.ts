@@ -1,3 +1,5 @@
+import { TOXICITY_BLOCKED } from "@/lib/learning/starstream-constants";
+
 export type PublishState = "draft" | "published";
 export type AssignmentState = "not-started" | "in-progress" | "complete";
 export type SourceMode = "free" | "restricted";
@@ -249,10 +251,18 @@ export async function sendDomainMutation(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ action, payload }),
     });
-    if (!response.ok) return null;
-    const data = (await response.json()) as Partial<NexusSnapshot>;
-    return normalizeSnapshot(data);
-  } catch {
+    const data = (await response.json().catch(() => null)) as
+      | (Partial<NexusSnapshot> & { error?: string })
+      | null;
+    if (!response.ok) {
+      if (data?.error === TOXICITY_BLOCKED) {
+        throw new Error(TOXICITY_BLOCKED);
+      }
+      return null;
+    }
+    return normalizeSnapshot(data ?? {});
+  } catch (error) {
+    if (error instanceof Error && error.message === TOXICITY_BLOCKED) throw error;
     return null;
   }
 }

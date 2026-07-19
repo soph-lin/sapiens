@@ -4,8 +4,14 @@ import {
   fieldNotePlainBody,
   isPrivateNoteContent,
 } from "@/lib/learning/field-note-content";
-import { VISITOR_NOTE_HEADER } from "@/lib/learning/starstream-constants";
+import { checkToxicity } from "@/lib/moderation/toxicity";
+import {
+  TOXICITY_BLOCKED,
+  VISITOR_NOTE_HEADER,
+} from "@/lib/learning/starstream-constants";
 import { prisma } from "@/lib/prisma";
+
+export { TOXICITY_BLOCKED } from "@/lib/learning/starstream-constants";
 
 export type StarstreamAttachment = {
   url: string;
@@ -143,6 +149,10 @@ export async function syncStarstreamLogFromFieldNote(
       ? (existing.attachments as StarstreamAttachment[])
       : attachmentsFromSources(note.sources) ?? []);
   const allowReplies = options?.allowReplies ?? existing?.allowReplies ?? true;
+
+  const toxicity = await checkToxicity(starstreamLogBody(note.content));
+  if (!toxicity.allowed) return { error: TOXICITY_BLOCKED };
+
   const data = {
     parentId: null as string | null,
     allowReplies,
@@ -198,6 +208,11 @@ export async function publishVisitorNoteToStarstream(input: {
     },
     ...(commentary ? { commentary } : {}),
   };
+
+  const toxicity = await checkToxicity(
+    [commentary, fact].filter((part): part is string => Boolean(part)).join("\n"),
+  );
+  if (!toxicity.allowed) return { error: TOXICITY_BLOCKED };
 
   const attachments = normalizeAttachments(sources) ?? [];
   let assignmentId = note.assignmentId;
@@ -256,6 +271,9 @@ export async function createStarstreamReply(input: CreateStarstreamReplyInput) {
   if (!parent) return { error: "not_found" as const };
   if (parent.parentId) return { error: "not_root" as const };
   if (!parent.allowReplies) return { error: "replies_disabled" as const };
+
+  const toxicity = await checkToxicity(starstreamLogBody(input.content));
+  if (!toxicity.allowed) return { error: TOXICITY_BLOCKED };
 
   const attachments = normalizeAttachments(input.attachments) ?? [];
   const reply = await prisma.starstreamLog.create({

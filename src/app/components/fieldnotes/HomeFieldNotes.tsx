@@ -9,12 +9,17 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import toast from "react-hot-toast";
 import { useUser } from "@/app/components/user/UserProvider";
 import {
   fieldNoteSourceLabel,
   fieldNoteSources,
 } from "@/lib/learning/field-note-content";
-import { VISITOR_NOTE_HEADER } from "@/lib/learning/starstream-constants";
+import {
+  TOXICITY_BLOCKED,
+  TOXICITY_RESUBMIT_MESSAGE,
+  VISITOR_NOTE_HEADER,
+} from "@/lib/learning/starstream-constants";
 
 type FieldNote = {
   id: string;
@@ -207,11 +212,15 @@ export default function HomeFieldNotes({
         starstreamLogId?: string;
       } | null;
       if (!response.ok) {
-        throw new Error(
+        const apiError =
           typeof payload?.error === "string"
             ? payload.error
-            : "Could not publish to Starstream.",
-        );
+            : "Could not publish to Starstream.";
+        if (apiError === TOXICITY_BLOCKED) {
+          toast.error(TOXICITY_RESUBMIT_MESSAGE);
+          throw new Error(TOXICITY_RESUBMIT_MESSAGE);
+        }
+        throw new Error(apiError);
       }
       if (payload?.note) {
         const publishedNote = payload.note;

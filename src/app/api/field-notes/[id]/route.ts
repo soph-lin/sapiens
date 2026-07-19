@@ -5,7 +5,13 @@ import {
   fieldNotePlainBody,
   isPrivateNoteContent,
 } from "@/lib/learning/field-note-content";
-import { publishVisitorNoteToStarstream, syncStarstreamLogFromFieldNote } from "@/lib/learning/starstream";
+import { checkToxicity } from "@/lib/moderation/toxicity";
+import {
+  publishVisitorNoteToStarstream,
+  starstreamLogBody,
+  syncStarstreamLogFromFieldNote,
+  TOXICITY_BLOCKED,
+} from "@/lib/learning/starstream";
 
 export const runtime = "nodejs";
 
@@ -59,6 +65,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         voyageTopic: note.story.topic,
       });
       if ("error" in result) {
+        if (result.error === TOXICITY_BLOCKED) throw new ApiError(400, TOXICITY_BLOCKED);
         if (result.error === "empty_fact") throw new ApiError(400, "This visitor note has no fact to share.");
         if (result.error === "forbidden") throw new ApiError(403, "Only the note owner can publish it.");
         if (result.error === "not_visitor_note") {
@@ -100,6 +107,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         attachments: body.attachments,
       });
       if (!log) throw new ApiError(400, "Could not share field note to Starstream.");
+      if ("error" in log) throw new ApiError(400, TOXICITY_BLOCKED);
       const refreshed = await prisma.fieldNote.findUnique({
         where: { id },
         include: noteInclude,
@@ -117,6 +125,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const status = publicationStatus(body.status) ?? note.status;
     const content = body.content !== undefined ? jsonInput(body.content, "content") : body.body === undefined ? undefined : { body: requiredText(body.body, "body") };
     const sources = body.sources === undefined ? undefined : jsonInput(body.sources, "sources");
+    const nextContent = content ?? note.content;
+    if (status === "published") {
+      const toxicity = await checkToxicity(starstreamLogBody(nextContent));
+      if (!toxicity.allowed) throw new ApiError(400, TOXICITY_BLOCKED);
+    }
     const publishedAt =
       status === "published"
         ? note.status === "published" && note.publishedAt
@@ -135,10 +148,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       },
       include: noteInclude,
     });
-    await syncStarstreamLogFromFieldNote(updated, {
+    const synced = await syncStarstreamLogFromFieldNote(updated, {
       allowReplies: typeof body.allowReplies === "boolean" ? body.allowReplies : undefined,
       attachments: body.attachments,
     });
+    if (synced && "error" in synced) throw new ApiError(400, TOXICITY_BLOCKED);
     return NextResponse.json({ note: updated });
   } catch (error) {
     return errorResponse(error, "Could not update field note.");
