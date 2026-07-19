@@ -2,15 +2,47 @@
 
 experience humanity. the only way to move forwards is to look back
 
-## features
+**_a voyage is:_**
+
+an adventure where you travel back in time to a particular historical period or event. they can be assigned by the captain (teacher) of your fleet (classroom) or created by as a solo adventure.
+
+**_the starstream is:_**
+
+a forum where you can share and reply to discoveries and takeaways from voyages and historical eras with fellow cadets (students)
+
+**_stars are:_**
+
+mystical manifestations of people from the past. they have landed in your ship to communicate with you, and help you understand humanity by starting at the very beginning.
+
+**_your mission:_**
+
+to remember humanity. set in a world far far away in the future, humans are tasked with.
+
+well, that's the in-game answer. what about the real world?
+
+we want you to love learning, and not get dulled by standardized education. to develop a love for the world and what it took to get here, and to make you believe in a brighter future.
+
+**_our mission:_**
+
+to make education feel real. to make kids lifelong learners.
+
+**_so what are you waiting for, cadet?_**
+
+try sapiens now at [sapiens.sophli.in](http://sapiens.sophli.in)
+
+the stars look forward to your arrival.
+
+## pages
 
 `/` auraful hero page
 
 `/nexus` share discoveries with fellow cadets
 
-`/home` your ship
+`/ship` your home
 
 `/sail` sail away to a new world
+
+`/home` chat with stars of the past
 
 ## dev-features
 
@@ -19,6 +51,8 @@ experience humanity. the only way to move forwards is to look back
 `/voyages` view voyages
 
 `/draw` create map layouts
+
+[d] to debug on certain pages (`/ship`, `/nexus`, `/home`)
 
 ## tech
 
