@@ -31,6 +31,7 @@ const FONT_SIZE_LG = "1.65rem";
 export type DialogueBoxSize = "md" | "lg";
 
 export type DialogueEditableChoice = {
+  /** Empty/whitespace → render only the input (free-text option, no label copy). */
   label: string;
   value: string;
   placeholder?: string;
@@ -70,6 +71,8 @@ type DialogueBoxProps = {
   /** When false, choice prompts appear instantly (no typewriter). Default true. */
   typingEnabled?: boolean;
   onTypingChange?: (done: boolean) => void;
+  /** Render inline markdown (`**bold**`, `_italic_`); HTML tags stay literal. */
+  richText?: boolean;
   editableChoice?: DialogueEditableChoice;
   dropdownChoice?: DialogueDropdownChoice;
 };
@@ -94,6 +97,7 @@ export function DialogueBox({
   size = "lg",
   typingEnabled = true,
   onTypingChange,
+  richText = false,
   editableChoice,
   dropdownChoice,
 }: DialogueBoxProps) {
@@ -104,6 +108,7 @@ export function DialogueBox({
         text={view.text}
         theme={theme}
         size={size}
+        richText={richText}
         onContinue={() => {
           if (!typingGateRef.current.done) {
             typingGateRef.current.skip();
@@ -124,6 +129,7 @@ export function DialogueBox({
         choices={view.choices}
         theme={theme}
         size={size}
+        richText={richText}
         onChoose={onChoose}
         typingGateRef={typingGateRef}
         typingEnabled={typingEnabled}
@@ -142,6 +148,7 @@ export function DialogueBox({
       showStats={view.showStats}
       theme={theme}
       size={size}
+      richText={richText}
       onRestart={onRestart}
       typingGateRef={typingGateRef}
     />
@@ -207,6 +214,7 @@ function TextBeat({
   typingGateRef,
   theme,
   size,
+  richText = false,
   onTypingChange,
 }: {
   speaker?: string;
@@ -215,6 +223,7 @@ function TextBeat({
   typingGateRef: TypingGateRef;
   theme: DialogueTheme;
   size: DialogueBoxSize;
+  richText?: boolean;
   onTypingChange?: (done: boolean) => void;
 }) {
   const { displayed, done, skip } = useTypewriter(text);
@@ -243,6 +252,7 @@ function TextBeat({
         className={theme.body}
         style={bodyFontStyle(size)}
         theme={theme}
+        richText={richText}
       />
     </button>
   );
@@ -257,6 +267,7 @@ function ChoiceBeat({
   onTypingChange,
   theme,
   size,
+  richText = false,
   editableChoice,
   dropdownChoice,
 }: {
@@ -268,6 +279,7 @@ function ChoiceBeat({
   onTypingChange?: (done: boolean) => void;
   theme: DialogueTheme;
   size: DialogueBoxSize;
+  richText?: boolean;
   editableChoice?: DialogueEditableChoice;
   dropdownChoice?: DialogueDropdownChoice;
 }) {
@@ -410,6 +422,7 @@ function ChoiceBeat({
           className={theme.body}
           style={bodyFontStyle(size)}
           theme={theme}
+          richText={richText}
         />
       </button>
       {done ? (
@@ -500,7 +513,7 @@ function ChoiceBeat({
                         });
                       }}
                       aria-label={`${editableChoice.label || editableChoice.placeholder} dropdown`}
-                      className="mt-2 w-full border-b border-current/30 bg-transparent pb-1 text-[1.05rem] leading-snug text-current outline-none focus:border-cyan-200 sm:text-[1.125rem]"
+                      className="mt-2 w-full border-b border-current/30 bg-transparent pb-1 text-[1.05rem] leading-snug text-current outline-none focus:border-current sm:text-[1.125rem]"
                     >
                       <option value="" disabled>
                         {editableChoice.selectPlaceholder ?? "choose one…"}
@@ -512,7 +525,13 @@ function ChoiceBeat({
                       ))}
                     </select>
                   ) : null}
-                  <div className="relative mt-2">
+                  <div
+                    className={`relative ${
+                      editableChoice.label.trim() || editableChoice.selectOptions?.length
+                        ? "mt-2"
+                        : ""
+                    }`}
+                  >
                     <input
                       type="text"
                       data-editable-choice
@@ -554,7 +573,7 @@ function ChoiceBeat({
                       }}
                       placeholder={editableChoice.placeholder}
                       aria-label={editableChoice.label || editableChoice.placeholder}
-                      className="w-full border-b border-current/30 bg-transparent pb-1 text-[1.05rem] leading-snug text-current outline-none placeholder:text-current/35 focus:border-cyan-200 sm:text-[1.125rem]"
+                      className="w-full border-b border-current/30 bg-transparent pb-1 text-[1.05rem] leading-snug text-current outline-none placeholder:text-current/35 focus:border-current sm:text-[1.125rem]"
                     />
                     {(() => {
                       const suggestion = closestAutocompleteOption(
@@ -607,7 +626,7 @@ function ChoiceBeat({
                       onMouseDown={(event) => event.stopPropagation()}
                       onFocus={() => setActiveIndex(choices.length)}
                       aria-label={`${dropdownChoice.label} dropdown`}
-                      className="mt-2 w-full border-b border-current/30 bg-transparent pb-1 text-[1.05rem] leading-snug text-current outline-none focus:border-cyan-200 sm:text-[1.125rem]"
+                      className="mt-2 w-full border-b border-current/30 bg-transparent pb-1 text-[1.05rem] leading-snug text-current outline-none focus:border-current sm:text-[1.125rem]"
                     >
                       <option value="" disabled>
                         {dropdownChoice.placeholder ?? "choose one…"}
@@ -638,6 +657,7 @@ function EndBeat({
   typingGateRef,
   theme,
   size,
+  richText = false,
 }: {
   title: string;
   text: string;
@@ -647,6 +667,7 @@ function EndBeat({
   typingGateRef: TypingGateRef;
   theme: DialogueTheme;
   size: DialogueBoxSize;
+  richText?: boolean;
 }) {
   const { displayed, done, skip } = useTypewriter(text);
   useTypingGate(typingGateRef, done, skip);
@@ -673,6 +694,7 @@ function EndBeat({
           style={secondaryFontStyle(size)}
           theme={theme}
           caretTone="muted"
+          richText={richText}
         />
       </button>
       {done ? (

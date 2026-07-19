@@ -22,7 +22,6 @@ const COCO_PREFILLED_OPTIONS = new Set([
   "What caused this historical event?",
   "Who were the key people involved?",
   "How did this moment change what came next?",
-  "Actually, I was wondering about...",
 ]);
 
 function isDialogueHistory(value: unknown): value is DialogueHistoryEntry[] {

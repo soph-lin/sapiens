@@ -1,5 +1,9 @@
 import type { FieldNote, FieldNoteAuthorType, Prisma, User } from "@/generated/prisma/client";
 import { findPublishedAssignmentForStory } from "@/lib/learning/access";
+import {
+  fieldNotePlainBody,
+  isPrivateNoteContent,
+} from "@/lib/learning/field-note-content";
 import { VISITOR_NOTE_HEADER } from "@/lib/learning/starstream-constants";
 import { prisma } from "@/lib/prisma";
 
@@ -71,10 +75,7 @@ function attachmentsFromSources(sources: unknown): StarstreamAttachment[] | unde
 }
 
 function noteFact(content: unknown): string {
-  if (typeof content === "object" && content && "body" in content) {
-    return String((content as { body?: unknown }).body ?? "").trim();
-  }
-  return typeof content === "string" ? content.trim() : "";
+  return fieldNotePlainBody(content);
 }
 
 function noteSourcesList(sources: unknown): string[] {
@@ -100,6 +101,16 @@ type PublishableNote = Pick<
   | "updatedAt"
 >;
 
+/** Starstream post payload: private HTML journals become plain `{ body }` posts. */
+function starstreamPostContent(note: PublishableNote): Prisma.InputJsonValue {
+  if (isPrivateNoteContent(note.content)) {
+    const body = fieldNotePlainBody(note.content);
+    const title = note.title?.trim();
+    return (title ? { body, title } : { body }) as Prisma.InputJsonValue;
+  }
+  return note.content as Prisma.InputJsonValue;
+}
+
 /** Upsert a root StarstreamLog from a published user FieldNote, or remove it when unpublished. */
 export async function syncStarstreamLogFromFieldNote(
   note: PublishableNote,
@@ -108,14 +119,19 @@ export async function syncStarstreamLogFromFieldNote(
     attachments?: unknown;
   },
 ) {
-  if (note.authorType === "bot") {
-    // Bot visitor notes publish through publishVisitorNoteToStarstream.
+  if (note.authorType === "bot" || note.authorType === "coco") {
+    // Visitor notes (actor/Coco) publish through publishVisitorNoteToStarstream.
     return null;
   }
   if (note.status !== "published") {
     await prisma.starstreamLog.deleteMany({
       where: { fieldNoteId: note.id, parentId: null, type: "post" },
     });
+    return null;
+  }
+
+  const postContent = starstreamPostContent(note);
+  if (isPrivateNoteContent(note.content) && !fieldNotePlainBody(note.content)) {
     return null;
   }
 
@@ -137,7 +153,7 @@ export async function syncStarstreamLogFromFieldNote(
     authorType: note.authorType,
     authorName: note.authorName,
     title: note.title,
-    content: note.content as Prisma.InputJsonValue,
+    content: postContent,
     attachments: attachments as Prisma.InputJsonValue,
   };
 
@@ -148,7 +164,7 @@ export async function syncStarstreamLogFromFieldNote(
   });
 }
 
-/** Publish a bot visitor FieldNote to Starstream as type visitorNote. */
+/** Publish a bot or Coco visitor FieldNote to Starstream as type visitorNote. */
 export async function publishVisitorNoteToStarstream(input: {
   note: PublishableNote;
   publisher: { id: string; displayName: string; role: User["role"] };
@@ -156,7 +172,9 @@ export async function publishVisitorNoteToStarstream(input: {
   voyageTopic?: string;
 }) {
   const { note, publisher } = input;
-  if (note.authorType !== "bot") return { error: "not_visitor_note" as const };
+  if (note.authorType !== "bot" && note.authorType !== "coco") {
+    return { error: "not_visitor_note" as const };
+  }
   if (note.authorId !== publisher.id) return { error: "forbidden" as const };
 
   const fact = noteFact(note.content);
@@ -167,9 +185,13 @@ export async function publishVisitorNoteToStarstream(input: {
       ? input.commentary.trim()
       : undefined;
   const sources = noteSourcesList(note.sources);
+  const characterName =
+    note.authorType === "coco"
+      ? "Coco"
+      : note.authorName?.trim() || "A companion";
   const content: VisitorNoteContent = {
     visitor: {
-      characterName: note.authorName?.trim() || "A companion",
+      characterName,
       voyageTopic: input.voyageTopic?.trim() || "Historical voyage",
       fact,
       sources,

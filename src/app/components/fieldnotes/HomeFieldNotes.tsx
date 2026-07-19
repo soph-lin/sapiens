@@ -10,6 +10,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useUser } from "@/app/components/user/UserProvider";
+import {
+  fieldNoteSourceLabel,
+  fieldNoteSources,
+} from "@/lib/learning/field-note-content";
 import { VISITOR_NOTE_HEADER } from "@/lib/learning/starstream-constants";
 
 type FieldNote = {
@@ -36,26 +40,6 @@ function noteBody(value: unknown) {
   return typeof value === "string"
     ? value
     : "A new field note is waiting in your log.";
-}
-
-function noteSources(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (source): source is string =>
-      typeof source === "string" && Boolean(source.trim()),
-  );
-}
-
-function sourceLabel(url: string) {
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.replace(/^www\./, "");
-    const path =
-      parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/$/, "");
-    return path ? `${host}${path}` : host;
-  } catch {
-    return url;
-  }
 }
 
 function seenStorageKey(username: string | undefined) {
@@ -378,7 +362,7 @@ export default function HomeFieldNotes({
               </div>
             ) : (
               botNotes.map((note) => {
-                const sources = noteSources(note.sources);
+                const sources = fieldNoteSources(note.sources);
                 const sourcesOpen = openSourcesId === note.id;
                 return (
                   <article
@@ -442,7 +426,7 @@ export default function HomeFieldNotes({
                                     className="mt-0.5 shrink-0 text-cyan-200/45 transition group-hover:text-cyan-100/70"
                                   />
                                   <span className="min-w-0 break-all">
-                                    {sourceLabel(url)}
+                                    {fieldNoteSourceLabel(url)}
                                   </span>
                                 </a>
                               </li>

@@ -13,7 +13,6 @@ import {
   FileText,
   Heart,
   LoaderCircle,
-  LogOut,
   Menu,
   Plus,
   Send,
@@ -28,6 +27,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { SparklingStars } from "@/app/components/effects";
 import LoadingScreen from "@/app/components/loading/LoadingScreen";
+import { AppNavbar } from "@/app/components/nav";
 import ProgressLogPanel from "@/app/components/progress/ProgressLogPanel";
 import { ReportMarkdown } from "@/app/components/report";
 import {
@@ -301,77 +301,6 @@ function ProgressBar({
   );
 }
 
-function SignedInControl({
-  user,
-  onSignOut,
-}: {
-  user: DemoUser;
-  onSignOut: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  return (
-    <div ref={rootRef} className="relative">
-      <button
-        type="button"
-        aria-label="Account menu"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
-        className="rounded-full transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
-      >
-        <Avatar
-          initials={userInitials(user.displayName)}
-          className="size-9 bg-cyan-200 text-[#071014]"
-        />
-      </button>
-      {open ? (
-        <div
-          role="menu"
-          aria-label="Account"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 min-w-[11rem] overflow-hidden rounded-xl border border-white/10 bg-[#0a171d]/95 py-1 shadow-[0_16px_48px_rgba(0,0,0,0.45)] backdrop-blur-xl"
-        >
-          <div className="border-b border-white/10 px-3 py-2.5">
-            <p className="truncate text-sm text-white">{user.displayName}</p>
-            <p className="mt-0.5 font-space text-[9px] uppercase tracking-[0.14em] text-white/35">
-              {roleLabel(user.role)}
-            </p>
-          </div>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onSignOut();
-            }}
-            className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-white/65 transition hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:bg-white/[0.06] focus-visible:text-white"
-          >
-            <LogOut size={14} />
-            Sign out
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function NexusShell({
   user,
   onSignOut,
@@ -391,145 +320,129 @@ function NexusShell({
 }) {
   const label = roleLabel(user.role);
   return (
-    <div className="nexus-page min-h-dvh overflow-x-hidden bg-[#071014] text-[#f4f1ea]">
-      <SparklingStars />
-      <div
-        className="pointer-events-none fixed inset-0 opacity-80"
-        aria-hidden="true"
-      >
-        <div className="absolute -left-24 -top-32 size-[32rem] rounded-full bg-cyan-400/[0.07] blur-[110px]" />
-        <div className="absolute right-[-14rem] top-[18rem] size-[34rem] rounded-full bg-orange-400/[0.045] blur-[120px]" />
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(178,232,232,0.028)_1px,transparent_1px),linear-gradient(90deg,rgba(178,232,232,0.028)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:linear-gradient(to_bottom,black,transparent_70%)]" />
-      </div>
-      <header className="sticky top-0 z-40 flex min-h-[4.5rem] items-center justify-between border-b border-white/10 bg-[#071014]/90 px-4 py-3 backdrop-blur-xl lg:hidden">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            aria-label="Open navigation"
-            onClick={() => setSidebarOpen(true)}
-            className="grid size-10 place-items-center rounded-xl border border-white/10 text-white/70 transition hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
-          >
-            <Menu size={19} />
-          </button>
-          <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-cyan-200 text-[#071014]">
-              <Command size={17} />
-            </span>
-            <span className="font-space text-[11px] font-bold uppercase tracking-[0.2em]">
-              Nexus
-            </span>
-          </div>
+    <div className="nexus-page flex min-h-dvh w-full max-w-full flex-col overflow-x-clip bg-[#071014] text-[#f4f1ea]">
+      <AppNavbar theme="space" onSignOut={onSignOut} />
+      <div className="relative flex min-h-0 w-full flex-1 flex-col">
+        <SparklingStars />
+        <div
+          className="pointer-events-none fixed inset-0 top-14 opacity-80"
+          aria-hidden="true"
+        >
+          <div className="absolute -left-24 -top-32 size-[32rem] rounded-full bg-cyan-400/[0.07] blur-[110px]" />
+          <div className="absolute right-[-14rem] top-[18rem] size-[34rem] rounded-full bg-orange-400/[0.045] blur-[120px]" />
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(178,232,232,0.028)_1px,transparent_1px),linear-gradient(90deg,rgba(178,232,232,0.028)_1px,transparent_1px)] bg-[size:72px_72px] [mask-image:linear-gradient(to_bottom,black,transparent_70%)]" />
         </div>
-        <SignedInControl user={user} onSignOut={onSignOut} />
-      </header>
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-[17rem] shrink-0 flex-col border-r border-white/10 bg-[#081217]/95 px-4 py-5 backdrop-blur-xl transition-transform duration-300 motion-reduce:transition-none lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
-      >
-        <div className="flex items-center justify-between px-2">
+        <header className="sticky top-14 z-40 flex min-h-14 items-center border-b border-white/10 bg-[#071014]/90 px-4 py-3 backdrop-blur-xl lg:hidden">
           <div className="flex items-center gap-3">
-            <span className="grid size-9 place-items-center rounded-xl bg-cyan-200 text-[#071014] shadow-[0_0_24px_rgba(165,243,252,0.16)]">
-              <Command size={18} />
-            </span>
-            <div>
-              <p className="font-space text-[12px] font-bold uppercase tracking-[0.22em] text-white">
-                Nexus
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            aria-label="Close navigation"
-            onClick={() => setSidebarOpen(false)}
-            className="grid size-9 place-items-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 lg:hidden"
-          >
-            <X size={17} />
-          </button>
-        </div>
-        <div className="mt-10 rounded-2xl border border-cyan-200/10 bg-cyan-200/[0.04] p-4">
-          <div className="flex items-center gap-3">
-            <Avatar
-              initials={userInitials(user.displayName)}
-              className="size-10 border-cyan-200/20"
-            />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-white">
-                {label} {user.displayName}
-              </p>
-              <p className="mt-0.5 font-space text-[9px] uppercase tracking-[0.12em] text-cyan-100/40">
-                {label}
-              </p>
-            </div>
-          </div>
-        </div>
-        <nav className="mt-8" aria-label="Nexus navigation">
-          <p className="px-3 font-space text-[9px] uppercase tracking-[0.22em] text-white/25">
-            Workspace
-          </p>
-          <div className="mt-3 space-y-1">
-            {(user.role === "teacher" ? navItems : studentNavItems).map(
-              ({ label, icon: Icon }) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => {
-                    onSectionChange(label);
-                    setSidebarOpen(false);
-                  }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60 ${section === label ? "bg-cyan-200/10 text-cyan-100" : "text-white/48 hover:bg-white/[0.045] hover:text-white/85"}`}
-                >
-                  <Icon size={17} strokeWidth={1.8} />
-                  <span>{label}</span>
-                </button>
-              ),
-            )}
-            {user.role === "student" ? (
-              <Link
-                href="/ship"
-                onClick={() => setSidebarOpen(false)}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-white/48 transition motion-reduce:transition-none hover:bg-white/[0.045] hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
-              >
-                <Ship size={17} strokeWidth={1.8} />
-                <span>Ship</span>
-              </Link>
-            ) : null}
-          </div>
-        </nav>
-        <div className="mt-auto flex items-center justify-between px-2 pt-8">
-          <span className="font-space text-[9px] uppercase tracking-[0.14em] text-white/25">
-            Sapiens · 0.1
-          </span>
-          <Tooltip label="Help">
             <button
               type="button"
-              aria-label="Help"
-              className="text-white/30 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
+              aria-label="Open navigation"
+              onClick={() => setSidebarOpen(true)}
+              className="grid size-10 place-items-center rounded-xl border border-white/10 text-white/70 transition hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
             >
-              <CircleHelp size={16} />
+              <Menu size={19} />
             </button>
-          </Tooltip>
-        </div>
-      </aside>
-      {sidebarOpen && (
-        <button
-          type="button"
-          aria-label="Close navigation overlay"
-          onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-40 bg-black/55 lg:hidden"
-        />
-      )}
-      <main className="relative z-10 min-h-dvh lg:pl-[17rem]">
-        <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-7 sm:px-7 lg:px-10 lg:pt-8">
-          <div className="hidden items-center justify-between lg:flex">
-            <div className="flex items-center gap-2 font-space text-[9px] uppercase tracking-[0.24em] text-white/30">
-              <span>Nexus</span>
-              <ChevronRight size={13} />
-              <span className="text-cyan-100/65">{label} view</span>
+            <div className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-lg bg-cyan-200 text-[#071014]">
+                <Command size={17} />
+              </span>
+              <span className="font-space text-[11px] font-bold uppercase tracking-[0.2em]">
+                Nexus
+              </span>
             </div>
-            <SignedInControl user={user} onSignOut={onSignOut} />
           </div>
-          {children}
-        </div>
-      </main>
+        </header>
+        <aside
+          className={`fixed bottom-0 left-0 top-14 z-50 flex w-[17rem] shrink-0 flex-col border-r border-white/10 bg-[#081217]/95 px-4 py-5 backdrop-blur-xl transition-transform duration-300 motion-reduce:transition-none lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+        >
+          <div className="flex justify-end px-2 lg:hidden">
+            <button
+              type="button"
+              aria-label="Close navigation"
+              onClick={() => setSidebarOpen(false)}
+              className="grid size-9 place-items-center rounded-lg text-white/35 hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
+            >
+              <X size={17} />
+            </button>
+          </div>
+          <div className="mt-4 rounded-2xl border border-cyan-200/10 bg-cyan-200/[0.04] p-4 lg:mt-0">
+            <div className="flex items-center gap-3">
+              <Avatar
+                initials={userInitials(user.displayName)}
+                className="size-10 border-cyan-200/20"
+              />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-white">
+                  {label} {user.displayName}
+                </p>
+                <p className="mt-0.5 font-space text-[9px] uppercase tracking-[0.12em] text-cyan-100/40">
+                  {label}
+                </p>
+              </div>
+            </div>
+          </div>
+          <nav className="mt-8" aria-label="Nexus navigation">
+            <p className="px-3 font-space text-[9px] uppercase tracking-[0.22em] text-white/25">
+              Workspace
+            </p>
+            <div className="mt-3 space-y-1">
+              {(user.role === "teacher" ? navItems : studentNavItems).map(
+                ({ label, icon: Icon }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      onSectionChange(label);
+                      setSidebarOpen(false);
+                    }}
+                    className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60 ${section === label ? "bg-cyan-200/10 text-cyan-100" : "text-white/48 hover:bg-white/[0.045] hover:text-white/85"}`}
+                  >
+                    <Icon size={17} strokeWidth={1.8} />
+                    <span>{label}</span>
+                  </button>
+                ),
+              )}
+              {user.role === "student" ? (
+                <Link
+                  href="/ship"
+                  onClick={() => setSidebarOpen(false)}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm text-white/48 transition motion-reduce:transition-none hover:bg-white/[0.045] hover:text-white/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/60"
+                >
+                  <Ship size={17} strokeWidth={1.8} />
+                  <span>Ship</span>
+                </Link>
+              ) : null}
+            </div>
+          </nav>
+          <div className="mt-auto flex items-center justify-between px-2 pt-8">
+            <span className="font-space text-[9px] uppercase tracking-[0.14em] text-white/25">
+              Sapiens · 0.1
+            </span>
+            <Tooltip label="Help">
+              <button
+                type="button"
+                aria-label="Help"
+                className="text-white/30 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
+              >
+                <CircleHelp size={16} />
+              </button>
+            </Tooltip>
+          </div>
+        </aside>
+        {sidebarOpen && (
+          <button
+            type="button"
+            aria-label="Close navigation overlay"
+            onClick={() => setSidebarOpen(false)}
+            className="fixed inset-x-0 bottom-0 top-14 z-40 bg-black/55 lg:hidden"
+          />
+        )}
+        <main className="relative z-10 min-h-0 flex-1 lg:pl-[17rem]">
+          <div className="mx-auto max-w-[1500px] px-4 pb-16 pt-7 sm:px-7 lg:px-10 lg:pt-8">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
@@ -1574,9 +1487,7 @@ function DiscoveriesSection({
     );
   }
   const discoveries = snapshot.voyages
-    .filter(
-      (voyage) => voyage.completed || notesByVoyage.has(voyage.id),
-    )
+    .filter((voyage) => voyage.completed || notesByVoyage.has(voyage.id))
     .sort((a, b) => {
       const aTime = a.completedAt
         ? Date.parse(a.completedAt)
@@ -2848,9 +2759,6 @@ function StudentView({
     <>
       <div className="mt-8 flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
         <div>
-          <p className="font-space text-[10px] uppercase tracking-[0.25em] text-orange-100/60">
-            Student workspace
-          </p>
           <h1 className="mt-3 max-w-3xl font-display text-[clamp(2.5rem,5vw,4.8rem)] leading-[0.97] tracking-[-0.055em] text-white">
             {section === "Starstream" ? (
               "Starstream"
@@ -2869,7 +2777,7 @@ function StudentView({
             <p className="mt-4 max-w-xl text-sm leading-6 text-white/45 sm:text-base">
               {section === "Crew"
                 ? "Your Captain and fellow cadets on this voyage."
-                : "Follow the route, collect evidence, and leave a note where the story changes."}
+                : "Embark on voyages to the past and share your discoveries with fellow cadets."}
             </p>
           )}
         </div>
@@ -3937,7 +3845,9 @@ export default function NexusClient() {
     <NexusShell
       user={user}
       onSignOut={() => {
-        void fetch("/api/demo-auth/sign-out", { method: "POST" }).catch(() => {});
+        void fetch("/api/demo-auth/sign-out", { method: "POST" }).catch(
+          () => {},
+        );
         generationTerminationRef.current = true;
         generationAbortRef.current?.abort();
         setUser(null);

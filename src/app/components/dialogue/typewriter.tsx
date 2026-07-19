@@ -8,6 +8,10 @@ import {
   type MutableRefObject,
 } from "react";
 import type { DialogueTheme } from "./theme";
+import {
+  renderInlineMarkdown,
+  stripInlineMarkdown,
+} from "./InlineMarkdown";
 
 const CHAR_MS = 18;
 const PUNCT_PAUSE_MS = 90;
@@ -131,6 +135,8 @@ export function TypeCaret({
 /**
  * Typewriter copy that sizes to the final text height immediately, so the
  * box does not grow line-by-line as characters appear.
+ * When `richText` is true, completed `**bold**` / `*italic*` / `_italic_`
+ * markers render as emphasis; HTML-like tags stay literal text.
  */
 export function TypewriterLine({
   text,
@@ -140,6 +146,7 @@ export function TypewriterLine({
   style,
   theme,
   caretTone = "dark",
+  richText = false,
 }: {
   text: string;
   displayed: string;
@@ -148,14 +155,19 @@ export function TypewriterLine({
   style?: CSSProperties;
   theme: DialogueTheme;
   caretTone?: "dark" | "muted";
+  richText?: boolean;
 }) {
+  const render = (value: string) =>
+    richText ? renderInlineMarkdown(value) : value;
+  const label = richText ? stripInlineMarkdown(text) : text;
+
   return (
-    <p className={`relative ${className}`} style={style} aria-label={text}>
+    <p className={`relative ${className}`} style={style} aria-label={label}>
       <span aria-hidden className="invisible block">
-        {text}
+        {render(text)}
       </span>
       <span aria-hidden className="absolute inset-0">
-        {displayed}
+        {render(displayed)}
         {!done ? <TypeCaret theme={theme} tone={caretTone} /> : null}
       </span>
     </p>

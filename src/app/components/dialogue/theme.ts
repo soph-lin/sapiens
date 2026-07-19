@@ -36,7 +36,7 @@ export type DialogueTheme = {
 
 export const THEMES: Record<DialogueThemeId, DialogueTheme> = {
   vanilla: {
-    root: "relative flex min-h-dvh flex-col bg-white text-neutral-950",
+    root: "relative flex min-h-full flex-col bg-white text-neutral-950",
     toastClass: "font-sans",
     toastStyle: {
       background: "#ffffff",
@@ -68,8 +68,8 @@ export const THEMES: Record<DialogueThemeId, DialogueTheme> = {
     bodyMuted:
       "text-[1.05rem] leading-relaxed text-neutral-700 sm:text-[1.125rem]",
     hint: "text-[11px] tracking-[0.16em] uppercase text-neutral-400 transition-colors group-hover:text-neutral-700 group-focus-visible:text-neutral-700",
-    choiceSelected: "bg-neutral-50",
-    choiceIdle: "bg-transparent hover:bg-neutral-50/70",
+    choiceSelected: "bg-neutral-100",
+    choiceIdle: "bg-transparent hover:bg-neutral-100/70",
     choiceIndex: "text-neutral-400",
     choiceIndexSelected: "text-neutral-900",
     choiceLabel: "text-neutral-800",
@@ -84,7 +84,7 @@ export const THEMES: Record<DialogueThemeId, DialogueTheme> = {
     caretMuted: "bg-neutral-700",
   },
   space: {
-    root: "relative flex min-h-dvh flex-col bg-black text-white font-space",
+    root: "relative flex min-h-full flex-col bg-black text-white font-space",
     toastClass: "font-space",
     toastStyle: {
       background: "#000000",

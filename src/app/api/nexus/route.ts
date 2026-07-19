@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { errorResponse, jsonInput, parseJsonBody, requireDemoUser, requiredText } from "@/lib/learning/api";
-import { isTakeawayNoteContent, takeawayNoteBody } from "@/lib/learning/field-note-content";
+import { isTakeawayNoteContent, isVoyageCompletionNote, takeawayNoteBody } from "@/lib/learning/field-note-content";
 import {
   starstreamAttachmentsView,
   starstreamLogBody,
@@ -506,8 +506,19 @@ export async function POST(request: Request) {
       const voyageId = requiredText(payload.voyageId, "voyageId");
       const assignment = await prisma.classroomAssignment.findFirst({ where: { status: "published", OR: [{ storyId: voyageId }, { journey: { voyages: { some: { storyId: voyageId } } } }], classroom: { memberships: { some: { userId: user.id } } } } });
       if (assignment) {
-        const note = await prisma.fieldNote.findFirst({ where: { assignmentId: assignment.id, storyId: voyageId, authorId: user.id, status: "published" }, select: { id: true } });
-        if (!note) throw new Error("Publish a field note before completing this voyage.");
+        const notes = await prisma.fieldNote.findMany({
+          where: {
+            assignmentId: assignment.id,
+            storyId: voyageId,
+            authorId: user.id,
+            status: "published",
+            authorType: "user",
+          },
+          select: { content: true, status: true, authorType: true },
+        });
+        if (!notes.some((note) => isVoyageCompletionNote(note))) {
+          throw new Error("Publish a field note before completing this voyage.");
+        }
       } else {
         const soloStory = await prisma.story.findFirst({ where: { id: voyageId, createdById: user.id, status: "published" }, select: { id: true } });
         if (!soloStory) throw new Error("Voyage is not available to this cadet.");

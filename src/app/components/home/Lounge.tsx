@@ -180,9 +180,12 @@ async function runSteerAgent(
           agent: textValue(data?.agent) ?? agent,
           phase: textValue(data?.phase) ?? "agent",
           message: textValue(data?.message) ?? "Progress update",
-          details: data?.details && typeof data.details === "object" && !Array.isArray(data.details)
-            ? data.details as Record<string, unknown>
-            : undefined,
+          details:
+            data?.details &&
+            typeof data.details === "object" &&
+            !Array.isArray(data.details)
+              ? (data.details as Record<string, unknown>)
+              : undefined,
         });
       } else if (parsed.event === "asset" && data) {
         const type = textValue(data.type);
@@ -328,7 +331,9 @@ export default function Lounge() {
     void fetch("/api/classrooms/current")
       .then(async (response) => {
         if (!response.ok) throw new Error("Could not load classroom policy");
-        return response.json() as Promise<{ classroom?: HomeFlourishPolicy | null }>;
+        return response.json() as Promise<{
+          classroom?: HomeFlourishPolicy | null;
+        }>;
       })
       .then((payload) => {
         if (active && payload.classroom) setHomeFlourish(payload.classroom);
@@ -412,17 +417,24 @@ export default function Lounge() {
     });
     const body = asRecord(await response.json().catch(() => null));
     if (!response.ok) {
-      throw new Error(textValue(body?.error) ?? "Could not create story generation run.");
+      throw new Error(
+        textValue(body?.error) ?? "Could not create story generation run.",
+      );
     }
     const slug = textValue(body?.slug);
-    if (!slug) throw new Error("Story generation run was created without a slug.");
+    if (!slug)
+      throw new Error("Story generation run was created without a slug.");
     storyRunSlugRef.current = slug;
     return slug;
   };
 
   const persistStoryGenRun = (
     nextOutputs: Record<string, unknown> = {},
-    options: { error?: string; status?: "ongoing" | "fail" | "succeed"; usage?: unknown } = {},
+    options: {
+      error?: string;
+      status?: "ongoing" | "fail" | "succeed";
+      usage?: unknown;
+    } = {},
   ): Promise<void> => {
     const slug = storyRunSlugRef.current;
     if (!slug) return Promise.resolve();
@@ -663,10 +675,12 @@ export default function Lounge() {
     const steering = (steeringInput ?? historicalEvent).trim();
 
     try {
-      const runSlug = existingRunSlug ?? await createStoryGenRun(steering, {
-        maxTurns: 10,
-        maxCharacters: 3,
-      });
+      const runSlug =
+        existingRunSlug ??
+        (await createStoryGenRun(steering, {
+          maxTurns: 10,
+          maxCharacters: 3,
+        }));
       if (existingRunSlug) storyRunSlugRef.current = existingRunSlug;
       if (curatorOutput !== undefined) {
         await persistStoryGenRun({ curator: curatorOutput });
@@ -700,12 +714,15 @@ export default function Lounge() {
           flourish: homeFlourish,
           plotDirection:
             typeof idea === "string"
-              ? steeringInput ?? idea
+              ? (steeringInput ?? idea)
               : idea.plotDirection,
         },
       );
       setCocoPipelineProgress(0.42);
-      await persistStoryGenRun({ director: director.output }, { usage: { director: director.usage } });
+      await persistStoryGenRun(
+        { director: director.output },
+        { usage: { director: director.usage } },
+      );
 
       const writer = await runSteerAgent(
         "writer",
@@ -722,7 +739,10 @@ export default function Lounge() {
         );
         throw new Error("Writer did not return asset requirements.");
       }
-      await persistStoryGenRun({ writer: writer.output }, { usage: { writer: writer.usage } });
+      await persistStoryGenRun(
+        { writer: writer.output },
+        { usage: { writer: writer.usage } },
+      );
 
       const artist = await runSteerAgent("artist", JSON.stringify(needAssets), {
         signal: abortController.signal,
@@ -730,7 +750,10 @@ export default function Lounge() {
         flourish: homeFlourish,
       });
       setCocoPipelineProgress(0.84);
-      await persistStoryGenRun({ artist: artist.output }, { usage: { artist: artist.usage } });
+      await persistStoryGenRun(
+        { artist: artist.output },
+        { usage: { artist: artist.usage } },
+      );
 
       const directorOutput = asRecord(director.output);
       if (!directorOutput) throw new Error("Director returned invalid output.");
@@ -971,14 +994,14 @@ export default function Lounge() {
 
   if (!tutorialReady) {
     return (
-      <div className="relative min-h-dvh w-full overflow-hidden bg-black text-white font-space">
+      <div className="relative h-full min-h-0 w-full overflow-hidden bg-[#071014] text-white font-space">
         <LoadingScreen />
       </div>
     );
   }
 
   return (
-    <div className="relative min-h-dvh w-full overflow-hidden bg-black text-white font-space">
+    <div className="relative h-full min-h-0 w-full overflow-hidden bg-[#071014] text-white font-space">
       {postTutorial || onShipScene(view.id) ? <HomeBackground /> : null}
       {showCoco ? (
         <Coco
@@ -1013,6 +1036,18 @@ export default function Lounge() {
         />
       ) : null}
 
+      {postTutorial && !cocoAwake ? (
+        <p
+          className="pointer-events-none absolute z-20 -translate-x-1/2 font-mono text-sm tracking-[0.04em] text-white/55"
+          style={{
+            left: `${COCO_CX * 100}%`,
+            top: `calc(${COCO_CY * 100}% + min(22vw, 22vh))`,
+          }}
+        >
+          tap coco 3 times to wake it up!
+        </p>
+      ) : null}
+
       {cocoDialogueOpen ? (
         cocoPipelineRunning || cocoCuratorRunning ? (
           <div className="fixed inset-0 z-50">
@@ -1023,7 +1058,7 @@ export default function Lounge() {
             />
           </div>
         ) : (
-          <main className="pointer-events-none relative z-10 mx-auto flex min-h-dvh w-full max-w-2xl flex-col justify-end px-6 pb-10 pt-[48vh] sm:px-8 sm:pb-14">
+          <main className="pointer-events-none relative z-10 mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col justify-end px-6 pb-10 pt-[48vh] sm:px-8 sm:pb-14">
             <DialoguePanel
               className="pointer-events-auto flex min-h-[28vh] flex-col"
               view={cocoDialogueView}
@@ -1046,16 +1081,20 @@ export default function Lounge() {
                       expanded: cocoGenreDropdownOpen,
                       onToggle: () => setCocoGenreDropdownOpen((open) => !open),
                       onSelect: (value) => {
-                        if (!COCO_GENRES.some((option) => option === value)) return;
-                        confirmCocoGeneration({ kind: "curator", query: value });
+                        if (!COCO_GENRES.some((option) => option === value))
+                          return;
+                        confirmCocoGeneration({
+                          kind: "curator",
+                          query: value,
+                        });
                       },
                     } satisfies DialogueDropdownChoice)
                   : undefined
               }
               editableChoice={
-                (cocoDialogueStep === "story" ||
-                  (cocoDialogueStep === "ideas" &&
-                    cocoRequestMode === "destination"))
+                cocoDialogueStep === "story" ||
+                (cocoDialogueStep === "ideas" &&
+                  cocoRequestMode === "destination")
                   ? {
                       label:
                         cocoDialogueStep === "story"
@@ -1135,7 +1174,7 @@ export default function Lounge() {
       />
 
       {!postTutorial ? (
-        <main className="pointer-events-none relative z-10 mx-auto flex min-h-dvh w-full max-w-2xl flex-col justify-end px-6 pb-10 pt-[48vh] sm:px-8 sm:pb-14">
+        <main className="pointer-events-none relative z-10 mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col justify-end px-6 pb-10 pt-[48vh] sm:px-8 sm:pb-14">
           <DialoguePanel
             className="pointer-events-auto flex min-h-[28vh] flex-col"
             view={view}

@@ -28,17 +28,86 @@ body:has(.home-screen) {
   overscroll-behavior: none;
 }
 
+html:has(.sail-screen),
+html:has(.sail-screen) body {
+  background-color: #ffffff !important;
+  color: #0a0a0a;
+  overflow-x: clip;
+  overscroll-behavior: none;
+  scrollbar-gutter: auto;
+  scrollbar-color: rgba(0, 0, 0, 0.22) transparent;
+}
+
+html:has(.sail-screen) body {
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 100%;
+}
+
+html:has(.nexus-page) {
+  background-color: #071014 !important;
+  overflow-x: clip !important;
+  overscroll-behavior: none !important;
+  scrollbar-gutter: auto !important;
+  scrollbar-color: rgba(178, 232, 232, 0.28) transparent;
+}
+
+html:has(.nexus-page) body {
+  background-color: #071014 !important;
+  color: #f4f1ea;
+  overflow-x: clip !important;
+  overscroll-behavior: none !important;
+  scrollbar-gutter: auto !important;
+  scrollbar-color: rgba(178, 232, 232, 0.28) transparent;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 100%;
+}
+
+html:has(.ship-screen) {
+  background-color: #071014 !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  scrollbar-gutter: auto !important;
+  scrollbar-color: rgba(178, 232, 232, 0.28) transparent;
+  height: 100%;
+  max-height: 100dvh;
+}
+
+html:has(.ship-screen) body {
+  background-color: #071014 !important;
+  color: #f4f1ea;
+  overflow: hidden !important;
+  overflow-x: clip !important;
+  overscroll-behavior: none !important;
+  scrollbar-gutter: auto !important;
+  scrollbar-color: rgba(178, 232, 232, 0.28) transparent;
+  height: 100%;
+  max-height: 100dvh;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 100%;
+}
+
 .map-editor-page,
 .map-home-page {
   position: relative;
   isolation: isolate;
-  height: 100dvh;
-  max-height: 100dvh;
   overflow: hidden;
   background:
     radial-gradient(circle at 8% 0%, rgba(33, 92, 91, 0.16), transparent 28rem),
     radial-gradient(circle at 94% 12%, rgba(139, 82, 30, 0.12), transparent 26rem),
     #080a0d;
+}
+
+.map-editor-page {
+  height: 100dvh;
+  max-height: 100dvh;
+}
+
+.map-home-page {
+  height: 100%;
+  max-height: 100%;
 }
 
 .map-editor-page::before,
