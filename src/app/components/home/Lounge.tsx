@@ -1096,8 +1096,8 @@ export default function Lounge() {
           <ShopPanel isOpen={shopOpen} onClose={() => setShopOpen(false)} />
           <div className="pointer-events-auto fixed bottom-6 right-6 z-30 flex flex-col items-center gap-3 sm:bottom-8 sm:right-8">
             <Link
-              href="/home-2d"
-              aria-label="Enter 2D home"
+              href="/home"
+              aria-label="Enter home"
               className="group relative flex size-14 items-center justify-center rounded-full border border-cyan-100/20 bg-slate-950/90 text-cyan-100 shadow-[0_0_30px_rgba(103,232,249,0.15)] backdrop-blur transition hover:border-cyan-100/50 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
             >
               <PixelHouseIcon size={22} />

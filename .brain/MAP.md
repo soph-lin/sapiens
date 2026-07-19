@@ -155,7 +155,7 @@ counts). The camera follows the player without a scrollbar. Spawn searches for t
 first valid floor position; if none exists, the player is omitted and
 the game view shows a `No floor available` error toast.
 
-The shared renderer is also used by `/home-2d`; its `GameController` owns the
+The shared renderer is also used by `/home`; its `GameController` owns the
 gameplay state and display orchestration while the route page remains a thin
 wrapper. Non-visual NPC conversation state and actor requests live in
 `src/lib/game/npc/useNpcDialogue.ts`; `src/app/components/game/MapRenderer.tsx`

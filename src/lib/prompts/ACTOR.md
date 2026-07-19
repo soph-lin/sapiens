@@ -1,6 +1,6 @@
 """
 WARNING: This markdown is currently not being used but kept for potential future use.
-The prompt for `/home-2d` characters has been migrated to `HISTORIAN.md`.
+The prompt for `/home` characters has been migrated to `HISTORIAN.md`.
 """
 
 # ACTOR

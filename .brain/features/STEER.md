@@ -22,7 +22,7 @@ Bonus task: choosing star character
   `wikipediaUrl`; a name appearing in the event article alone is not sufficient.
 - Writer carries that brief through.
 - Artist reuses or creates an optional top-down sprite for the person.
-- The star character is used in `/home-2d` where the player can interact with historical people from stories they have completed.
+- The star character is used in `/home` where the player can interact with historical people from stories they have completed.
 
 The shared execution context carries limits, progress, retries, and usage.
 

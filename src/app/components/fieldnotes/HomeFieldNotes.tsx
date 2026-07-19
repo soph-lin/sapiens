@@ -59,7 +59,7 @@ function sourceLabel(url: string) {
 }
 
 function seenStorageKey(username: string | undefined) {
-  return `sapiens:home-2d:read-field-notes:${username ?? "anonymous"}`;
+  return `sapiens:home:read-field-notes:${username ?? "anonymous"}`;
 }
 
 function readSeenIds(key: string) {

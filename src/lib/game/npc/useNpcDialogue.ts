@@ -390,7 +390,7 @@ export function useNpcDialogue({
         : "The character could not answer.";
       console.error(message);
       toast.error(pickRandomLabel(BACKEND_ERROR_LABELS), {
-        id: "home-2d-actor-llm-error",
+        id: "home-actor-llm-error",
       });
       updateDialogue((state) => ({
         ...state,
@@ -448,7 +448,7 @@ export function useNpcDialogue({
         : "Could not suggest follow-up questions.";
       console.error(message);
       toast.error(pickRandomLabel(BACKEND_ERROR_LABELS), {
-        id: "home-2d-actor-llm-error",
+        id: "home-actor-llm-error",
       });
       updateDialogue((state) => ({
         ...state,

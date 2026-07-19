@@ -22,8 +22,8 @@ body {
   font-family: var(--font-sans);
 }
 
-html:has(.home-2d-screen),
-body:has(.home-2d-screen) {
+html:has(.home-screen),
+body:has(.home-screen) {
   overflow: hidden;
   overscroll-behavior: none;
 }

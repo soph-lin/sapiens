@@ -596,14 +596,14 @@ export default function GameController() {
   useEffect(() => {
     if (mapStatus !== "error") return;
     toast.error(mapError ?? MAP_LOAD_ERROR_LABELS[0], {
-      id: "home-2d-map-load-error",
+      id: "home-map-load-error",
     });
   }, [mapError, mapStatus]);
 
   useEffect(() => {
     if (!starError) return;
     toast.error(starError, {
-      id: "home-2d-npc-load-error",
+      id: "home-npc-load-error",
     });
   }, [starError]);
 
