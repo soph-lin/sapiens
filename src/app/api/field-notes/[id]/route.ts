@@ -107,6 +107,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         attachments: body.attachments,
       });
       if (!log) throw new ApiError(400, "Could not share field note to Starstream.");
+      if ("error" in log) throw new ApiError(400, TOXICITY_BLOCKED);
       const refreshed = await prisma.fieldNote.findUnique({
         where: { id },
         include: noteInclude,
