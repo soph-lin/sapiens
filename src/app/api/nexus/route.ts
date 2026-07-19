@@ -5,6 +5,7 @@ import { errorResponse, jsonInput, parseJsonBody, requireDemoUser, requiredText,
 import { isTakeawayNoteContent, isVoyageCompletionNote, takeawayNoteBody } from "@/lib/learning/field-note-content";
 import { checkToxicity } from "@/lib/moderation/toxicity";
 import {
+  createStarstreamReply,
   starstreamAttachmentsView,
   starstreamLogBody,
   parseVisitorNoteContent,
@@ -12,6 +13,7 @@ import {
   toggleStarstreamLike,
   TOXICITY_BLOCKED,
 } from "@/lib/learning/starstream";
+import { STARSTREAM_REPLY_MAX_LENGTH } from "@/lib/learning/starstream-constants";
 import { sourcePolicyFromClassroom } from "@/lib/orchestrator/agent/flourish";
 import type { StarstreamLogPost } from "@/app/nexus/data";
 
@@ -534,18 +536,25 @@ export async function POST(request: Request) {
       await prisma.voyageProgress.upsert({ where: { studentId_storyId: { studentId: user.id, storyId: voyageId } }, create: { studentId: user.id, storyId: voyageId, assignmentId: assignment?.id, progress: { completed: true }, completed: true, completedAt: new Date() }, update: { assignmentId: assignment?.id, progress: { completed: true }, completed: true, completedAt: new Date() } });
       return NextResponse.json(await snapshot(user.id));
     }
-    if (action === "toggle-starstream-like") {
-      const logId = requiredText(payload.logId, "logId");
+    if (action === "toggle-starstream-like" || action === "create-starstream-reply") {
+      const logId =
+        action === "toggle-starstream-like"
+          ? requiredText(payload.logId, "logId")
+          : requiredText(payload.parentId, "parentId");
       const log = await prisma.starstreamLog.findUnique({
         where: { id: logId },
         select: {
           id: true,
-          assignmentId: true,
+          type: true,
+          authorId: true,
           story: { select: { createdById: true } },
           assignment: {
             select: {
               classroom: {
-                select: { teacherId: true, memberships: { where: { userId: user.id }, select: { userId: true } } },
+                select: {
+                  teacherId: true,
+                  memberships: { where: { userId: user.id }, select: { userId: true } },
+                },
               },
             },
           },
@@ -556,9 +565,54 @@ export async function POST(request: Request) {
         log.assignment?.classroom.teacherId === user.id ||
         Boolean(log.assignment?.classroom.memberships.length);
       const isSoloOwner = log.story.createdById === user.id;
-      if (!isClassroomMember && !isSoloOwner) throw new Error("You cannot like this post.");
-      const result = await toggleStarstreamLike(logId, user.id);
-      if ("error" in result) throw new Error("Starstream post not found.");
+      const isAuthor = log.authorId === user.id;
+      let isClassroomVisitorPeer = false;
+      if (!isClassroomMember && !isSoloOwner && !isAuthor && log.type === "visitorNote") {
+        const classroom = await prisma.classroom.findFirst({
+          where: {
+            OR: [{ teacherId: user.id }, { memberships: { some: { userId: user.id } } }],
+          },
+          select: {
+            teacherId: true,
+            memberships: { select: { userId: true } },
+          },
+        });
+        if (classroom) {
+          const peerIds = new Set([
+            classroom.teacherId,
+            ...classroom.memberships.map((membership) => membership.userId),
+          ]);
+          isClassroomVisitorPeer = peerIds.has(log.authorId);
+        }
+      }
+      if (!isClassroomMember && !isSoloOwner && !isAuthor && !isClassroomVisitorPeer) {
+        throw new Error(
+          action === "toggle-starstream-like"
+            ? "You cannot like this post."
+            : "You cannot reply to this post.",
+        );
+      }
+      if (action === "toggle-starstream-like") {
+        const result = await toggleStarstreamLike(logId, user.id);
+        if ("error" in result) throw new Error("Starstream post not found.");
+        return NextResponse.json(await snapshot(user.id));
+      }
+      const body = requiredText(payload.body, "body").trim();
+      if (!body) throw new ApiError(400, "body is required.");
+      if (body.length > STARSTREAM_REPLY_MAX_LENGTH) throw new ApiError(400, "Reply is too long.");
+      const result = await createStarstreamReply({
+        parentId: log.id,
+        authorId: user.id,
+        authorType: "user",
+        authorName: user.displayName,
+        content: { body },
+      });
+      if ("error" in result) {
+        if (result.error === TOXICITY_BLOCKED) throw new ApiError(400, TOXICITY_BLOCKED);
+        if (result.error === "replies_disabled") throw new ApiError(400, "replies_disabled");
+        if (result.error === "not_root") throw new ApiError(400, "You can only reply to a root post.");
+        throw new Error("Starstream post not found.");
+      }
       return NextResponse.json(await snapshot(user.id));
     }
     throw new Error("Unsupported Nexus action.");

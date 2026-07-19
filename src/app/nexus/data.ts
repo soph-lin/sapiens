@@ -255,14 +255,22 @@ export async function sendDomainMutation(
       | (Partial<NexusSnapshot> & { error?: string })
       | null;
     if (!response.ok) {
-      if (data?.error === TOXICITY_BLOCKED) {
-        throw new Error(TOXICITY_BLOCKED);
+      if (
+        data?.error === TOXICITY_BLOCKED ||
+        data?.error === "replies_disabled"
+      ) {
+        throw new Error(data.error);
       }
       return null;
     }
     return normalizeSnapshot(data ?? {});
   } catch (error) {
-    if (error instanceof Error && error.message === TOXICITY_BLOCKED) throw error;
+    if (
+      error instanceof Error &&
+      (error.message === TOXICITY_BLOCKED || error.message === "replies_disabled")
+    ) {
+      throw error;
+    }
     return null;
   }
 }

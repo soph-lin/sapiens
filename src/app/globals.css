@@ -22,10 +22,29 @@ body {
   font-family: var(--font-sans);
 }
 
-html:has(.home-screen),
-body:has(.home-screen) {
-  overflow: hidden;
-  overscroll-behavior: none;
+html:has(.home-screen) {
+  background-color: #071014 !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  scrollbar-gutter: auto !important;
+  scrollbar-color: rgba(178, 232, 232, 0.28) transparent;
+  height: 100%;
+  max-height: 100dvh;
+}
+
+html:has(.home-screen) body {
+  background-color: #071014 !important;
+  color: #f4f1ea;
+  overflow: hidden !important;
+  overflow-x: clip !important;
+  overscroll-behavior: none !important;
+  scrollbar-gutter: auto !important;
+  scrollbar-color: rgba(178, 232, 232, 0.28) transparent;
+  height: 100%;
+  max-height: 100dvh;
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 100%;
 }
 
 html:has(.sail-screen),

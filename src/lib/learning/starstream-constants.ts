@@ -6,3 +6,6 @@ export const TOXICITY_BLOCKED = "toxicity_blocked" as const;
 
 /** Toast / popup copy shown when a Starstream publish is blocked. */
 export const TOXICITY_RESUBMIT_MESSAGE = "Resubmit message." as const;
+
+/** Soft max length for Starstream reply bodies (client + API). */
+export const STARSTREAM_REPLY_MAX_LENGTH = 2000;

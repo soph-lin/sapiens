@@ -14,6 +14,7 @@ import {
   Heart,
   LoaderCircle,
   Menu,
+  MessageCircle,
   Plus,
   Send,
   Settings,
@@ -70,6 +71,7 @@ import {
 import {
   TOXICITY_BLOCKED,
   TOXICITY_RESUBMIT_MESSAGE,
+  STARSTREAM_REPLY_MAX_LENGTH,
 } from "@/lib/learning/starstream-constants";
 type Section =
   | "Overview"
@@ -960,6 +962,7 @@ function TeacherView({
   onImagineGeneration,
   generation,
   onToggleLike,
+  onReply,
   focusPostId,
 }: {
   snapshot: NexusSnapshot;
@@ -972,6 +975,7 @@ function TeacherView({
   onImagineGeneration: () => void;
   generation: VoyageGeneration | null;
   onToggleLike: (logId: string) => Promise<boolean>;
+  onReply: (parentId: string, body: string) => Promise<boolean>;
   focusPostId?: string | null;
 }) {
   const remoteApprovedDomains = snapshot.classroom?.approvedDomains ?? [];
@@ -1348,6 +1352,7 @@ function TeacherView({
             posts={notes}
             voyages={snapshot.voyages}
             onToggleLike={onToggleLike}
+            onReply={onReply}
             focusPostId={focusPostId}
             emptyTitle="Starstream is quiet"
             emptyBody="Published notes from your fleet will appear here, attached to their voyage."
@@ -1611,6 +1616,7 @@ function StarstreamFeed({
   posts,
   voyages,
   onToggleLike,
+  onReply,
   focusPostId,
   emptyTitle = "Starstream is quiet",
   emptyBody = "Published notes will appear here, attached to their voyage.",
@@ -1618,6 +1624,7 @@ function StarstreamFeed({
   posts: StarstreamLogPost[];
   voyages: Voyage[];
   onToggleLike: (logId: string) => Promise<boolean>;
+  onReply: (parentId: string, body: string) => Promise<boolean>;
   focusPostId?: string | null;
   emptyTitle?: string;
   emptyBody?: string;
@@ -1731,6 +1738,7 @@ function StarstreamFeed({
               post={post}
               voyage={voyageById.get(post.voyageId)}
               onToggleLike={onToggleLike}
+              onReply={onReply}
               highlighted={focusPostId === post.id}
             />
           ))
@@ -1792,21 +1800,35 @@ function StarstreamPostCard({
   post,
   voyage,
   onToggleLike,
+  onReply,
   nested = false,
   highlighted = false,
 }: {
   post: StarstreamLogPost;
   voyage?: Voyage;
   onToggleLike: (logId: string) => Promise<boolean>;
+  onReply?: (parentId: string, body: string) => Promise<boolean>;
   nested?: boolean;
   highlighted?: boolean;
 }) {
   const [likeState, setLikeState] = useState<"idle" | "saving">("idle");
   const [repliesOpen, setRepliesOpen] = useState(false);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [replyBody, setReplyBody] = useState("");
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [replyState, setReplyState] = useState<"idle" | "saving">("idle");
+  const [focusReplyId, setFocusReplyId] = useState<string | null>(null);
+  const [pendingFocusNewest, setPendingFocusNewest] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
+  const replyButtonRef = useRef<HTMLButtonElement>(null);
+  const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const replyCountAtSubmitRef = useRef(0);
   const initials = userInitials(post.authorName);
   const replyCount = post.replies.length;
   const replyLabel = `${replyCount} repl${replyCount === 1 ? "y" : "ies"}`;
+  const canReply = !nested && post.allowReplies && Boolean(onReply);
+  const threadOpen = repliesOpen || composeOpen;
+  const showThread = threadOpen && (replyCount > 0 || composeOpen);
 
   useEffect(() => {
     if (!highlighted || !articleRef.current) return;
@@ -1817,23 +1839,124 @@ function StarstreamPostCard({
     return () => window.clearTimeout(timer);
   }, [highlighted]);
 
+  useEffect(() => {
+    if (!composeOpen) return;
+    const timer = window.setTimeout(() => replyTextareaRef.current?.focus(), 40);
+    return () => window.clearTimeout(timer);
+  }, [composeOpen]);
+
+  useEffect(() => {
+    if (!pendingFocusNewest) return;
+    if (replyCount <= replyCountAtSubmitRef.current) return;
+    const newest = post.replies[post.replies.length - 1];
+    setPendingFocusNewest(false);
+    if (newest) setFocusReplyId(newest.id);
+  }, [pendingFocusNewest, replyCount, post.replies]);
+
+  useEffect(() => {
+    if (!focusReplyId) return;
+    const node = document.getElementById(`starstream-post-${focusReplyId}`);
+    if (!node) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    node.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "nearest",
+    });
+    if (node instanceof HTMLElement) node.focus({ preventScroll: true });
+    setFocusReplyId(null);
+  }, [focusReplyId]);
+
   const toggleLike = async () => {
     if (likeState === "saving") return;
     setLikeState("saving");
     await onToggleLike(post.id);
     setLikeState("idle");
   };
-  const toggleReplies = () => setRepliesOpen((open) => !open);
+
+  const closeCompose = (returnFocus = true) => {
+    if (replyState === "saving") return;
+    setComposeOpen(false);
+    setReplyBody("");
+    setReplyError(null);
+    setReplyState("idle");
+    if (replyCount === 0) setRepliesOpen(false);
+    if (returnFocus) {
+      window.setTimeout(() => replyButtonRef.current?.focus(), 40);
+    }
+  };
+
+  const openCompose = () => {
+    setComposeOpen(true);
+    setRepliesOpen(true);
+    setReplyError(null);
+  };
+
+  const toggleCompose = () => {
+    if (replyState === "saving") return;
+    if (composeOpen) {
+      closeCompose();
+      return;
+    }
+    openCompose();
+  };
+
+  const toggleReplies = () => {
+    if (replyState === "saving") return;
+    setRepliesOpen((open) => !open);
+  };
+
+  const submitReply = async () => {
+    if (!onReply || replyState === "saving") return;
+    const body = replyBody.trim();
+    if (!body) return;
+    if (body.length > STARSTREAM_REPLY_MAX_LENGTH) {
+      setReplyError("Reply is too long.");
+      return;
+    }
+    setReplyState("saving");
+    setReplyError(null);
+    try {
+      replyCountAtSubmitRef.current = replyCount;
+      const ok = await onReply(post.id, body);
+      if (!ok) {
+        setReplyError("Couldn’t post reply. Try again.");
+        setReplyState("idle");
+        return;
+      }
+      setReplyBody("");
+      setComposeOpen(false);
+      setRepliesOpen(true);
+      setReplyState("idle");
+      setPendingFocusNewest(true);
+    } catch (error) {
+      if (error instanceof Error && error.message === TOXICITY_BLOCKED) {
+        setReplyError(TOXICITY_RESUBMIT_MESSAGE);
+      } else if (error instanceof Error && error.message === "replies_disabled") {
+        toast.error("Replies are turned off for this post.");
+        setReplyState("idle");
+        setComposeOpen(false);
+        setReplyBody("");
+        setReplyError(null);
+        if (replyCount === 0) setRepliesOpen(false);
+        window.setTimeout(() => replyButtonRef.current?.focus(), 40);
+        return;
+      } else {
+        setReplyError("Couldn’t post reply. Try again.");
+      }
+      setReplyState("idle");
+    }
+  };
   return (
     <article
       ref={articleRef}
       id={`starstream-post-${post.id}`}
+      tabIndex={-1}
       className={
         nested
-          ? "rounded-xl border border-white/10 bg-black/20 p-4"
+          ? "rounded-xl border border-white/10 bg-black/20 p-4 outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
           : highlighted
-            ? "rounded-2xl border border-cyan-200/40 bg-cyan-200/[0.08] p-5 shadow-[0_0_0_1px_rgba(165,243,252,0.12)]"
-            : "rounded-2xl border border-white/10 bg-white/[0.035] p-5"
+            ? "rounded-2xl border border-cyan-200/40 bg-cyan-200/[0.08] p-5 shadow-[0_0_0_1px_rgba(165,243,252,0.12)] outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
+            : "rounded-2xl border border-white/10 bg-white/[0.035] p-5 outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
       }
     >
       <div className="flex items-start gap-3">
@@ -1922,7 +2045,7 @@ function StarstreamPostCard({
               ) : null}
             </>
           )}
-          <div className="mt-3 flex items-center gap-3">
+          <div className="mt-3 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => void toggleLike()}
@@ -1941,6 +2064,24 @@ function StarstreamPostCard({
               />
               <span>{post.likeCount}</span>
             </button>
+            {canReply ? (
+              <button
+                ref={replyButtonRef}
+                type="button"
+                onClick={toggleCompose}
+                disabled={replyState === "saving"}
+                aria-label="Reply"
+                aria-pressed={composeOpen}
+                title="Reply"
+                className={`inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:opacity-50 ${
+                  composeOpen
+                    ? "bg-white/10 text-white/70"
+                    : "text-white/40 hover:bg-white/5 hover:text-white/70"
+                }`}
+              >
+                <MessageCircle size={14} />
+              </button>
+            ) : null}
             {!nested && replyCount ? (
               <button
                 type="button"
@@ -1948,7 +2089,7 @@ function StarstreamPostCard({
                 aria-expanded={repliesOpen}
                 aria-controls={`starstream-replies-${post.id}`}
                 className={`rounded-lg px-2 py-1.5 font-space text-[9px] uppercase tracking-[0.12em] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 ${
-                  repliesOpen
+                  repliesOpen || composeOpen
                     ? "bg-white/10 text-white/70"
                     : "text-white/30 hover:bg-white/5 hover:text-white/55"
                 }`}
@@ -1957,21 +2098,26 @@ function StarstreamPostCard({
               </button>
             ) : null}
           </div>
-          {!nested && replyCount ? (
+          {!nested && showThread ? (
             <div
               id={`starstream-replies-${post.id}`}
               className={`grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none ${
-                repliesOpen ? "mt-4 grid-rows-[1fr]" : "grid-rows-[0fr]"
+                threadOpen ? "mt-4 grid-rows-[1fr]" : "grid-rows-[0fr]"
               }`}
             >
               <div className="min-h-0 overflow-hidden">
                 <div className="flex gap-0">
                   <button
                     type="button"
-                    onClick={() => setRepliesOpen(false)}
+                    onClick={() => {
+                      if (replyState === "saving") return;
+                      setRepliesOpen(false);
+                      if (composeOpen) closeCompose(false);
+                    }}
+                    disabled={replyState === "saving"}
                     aria-label="Hide replies"
                     title="Hide replies"
-                    className="group relative w-3 shrink-0 self-stretch rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
+                    className="group relative w-3 shrink-0 self-stretch rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:opacity-50"
                   >
                     <span
                       aria-hidden
@@ -1987,6 +2133,76 @@ function StarstreamPostCard({
                         nested
                       />
                     ))}
+                    {composeOpen && canReply ? (
+                      <form
+                        aria-label={`Reply to ${post.authorName}`}
+                        className="rounded-xl border border-white/10 bg-black/25 p-3"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void submitReply();
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (replyState === "saving") return;
+                            closeCompose();
+                          }
+                        }}
+                      >
+                        <label className="block">
+                          <span className="font-space text-[9px] uppercase tracking-[0.14em] text-white/35">
+                            Reply
+                          </span>
+                          <textarea
+                            ref={replyTextareaRef}
+                            value={replyBody}
+                            onChange={(event) => {
+                              setReplyBody(
+                                event.target.value.slice(
+                                  0,
+                                  STARSTREAM_REPLY_MAX_LENGTH,
+                                ),
+                              );
+                              if (replyError) setReplyError(null);
+                            }}
+                            rows={3}
+                            readOnly={replyState === "saving"}
+                            placeholder="Write a reply…"
+                            className={`${textareaClass} mt-1.5`}
+                          />
+                        </label>
+                        {replyError ? (
+                          <p role="alert" className="mt-2 text-xs text-rose-100/80">
+                            {replyError}
+                          </p>
+                        ) : null}
+                        <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => closeCompose()}
+                            disabled={replyState === "saving"}
+                            className="min-h-9 rounded-lg px-3 text-xs text-white/40 transition hover:text-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={
+                              replyState === "saving" || !replyBody.trim()
+                            }
+                            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-cyan-200 px-3 text-xs font-medium text-[#071014] transition hover:bg-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:opacity-50"
+                          >
+                            {replyState === "saving" ? (
+                              <LoaderCircle size={13} className="animate-spin" />
+                            ) : (
+                              <Send size={13} />
+                            )}
+                            Reply
+                          </button>
+                        </div>
+                      </form>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -2625,6 +2841,7 @@ function StudentView({
   displayName,
   onCommit,
   onToggleLike,
+  onReply,
   onOpenAssignment,
   focusPostId,
 }: {
@@ -2638,6 +2855,7 @@ function StudentView({
     payload: unknown,
   ) => Promise<boolean>;
   onToggleLike: (logId: string) => Promise<boolean>;
+  onReply: (parentId: string, body: string) => Promise<boolean>;
   onOpenAssignment: (
     assignmentId: string,
     options?: { readOnly?: boolean },
@@ -2814,6 +3032,7 @@ function StudentView({
             posts={snapshot.starstreamLogs}
             voyages={snapshot.voyages}
             onToggleLike={onToggleLike}
+            onReply={onReply}
             focusPostId={focusPostId}
             emptyTitle="Starstream is quiet"
             emptyBody="Published class notes from assigned voyages will appear here."
@@ -3361,6 +3580,30 @@ export default function NexusClient() {
     return true;
   };
 
+  const createStarstreamReply = async (
+    parentId: string,
+    body: string,
+  ): Promise<boolean> => {
+    try {
+      const remote = await sendDomainMutation("create-starstream-reply", {
+        parentId,
+        body,
+      });
+      if (!remote) return false;
+      setSnapshot(remote);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && error.message === TOXICITY_BLOCKED) {
+        toast.error(TOXICITY_RESUBMIT_MESSAGE);
+      }
+      if (error instanceof Error && error.message === "replies_disabled") {
+        const remote = await requestDomainSnapshot();
+        if (remote) setSnapshot(remote);
+      }
+      throw error;
+    }
+  };
+
   const openAssignmentEditor = (
     assignmentId: string,
     options?: { readOnly?: boolean },
@@ -3903,6 +4146,7 @@ export default function NexusClient() {
             setSnapshot((current) => ({ ...current, classroom }))
           }
           onToggleLike={toggleStarstreamLike}
+          onReply={createStarstreamReply}
           focusPostId={focusPostId}
         />
       ) : (
@@ -3913,6 +4157,7 @@ export default function NexusClient() {
           displayName={user.displayName}
           onCommit={commitSnapshot}
           onToggleLike={toggleStarstreamLike}
+          onReply={createStarstreamReply}
           onOpenAssignment={openAssignmentEditor}
           focusPostId={focusPostId}
         />

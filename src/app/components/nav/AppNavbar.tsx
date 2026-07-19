@@ -11,6 +11,7 @@ export type AppNavbarTheme = "space" | "light";
 
 const NAV_LINKS = [
   { href: "/nexus", label: "Nexus", match: (path: string) => path.startsWith("/nexus") },
+  { href: "/ship", label: "Ship", match: (path: string) => path.startsWith("/ship") },
   { href: "/home", label: "Home", match: (path: string) => path.startsWith("/home") },
 ] as const;
 

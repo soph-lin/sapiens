@@ -7,7 +7,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import Link from "next/link";
 import { ShoppingBag } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import type { Presentable } from "@/lib/dialogue";
@@ -24,7 +23,6 @@ import {
 } from "@/app/components/dialogue";
 import { COCO_CX, COCO_CY } from "@/app/components/coco/placement";
 import HomeBackground from "@/app/components/home/HomeBackground";
-import PixelHouseIcon from "@/app/components/home/PixelHouseIcon";
 import ShopPanel from "@/app/components/home/ShopPanel";
 import LoadingScreen from "@/app/components/loading/LoadingScreen";
 import ProgressLogPanel from "@/app/components/progress/ProgressLogPanel";
@@ -1134,16 +1132,6 @@ export default function Lounge() {
           )}
           <ShopPanel isOpen={shopOpen} onClose={() => setShopOpen(false)} />
           <div className="pointer-events-auto fixed bottom-6 right-6 z-30 flex flex-col items-center gap-3 sm:bottom-8 sm:right-8">
-            <Link
-              href="/home"
-              aria-label="Enter home"
-              className="group relative flex size-14 items-center justify-center rounded-full border border-cyan-100/20 bg-slate-950/90 text-cyan-100 shadow-[0_0_30px_rgba(103,232,249,0.15)] backdrop-blur transition hover:border-cyan-100/50 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-200/70"
-            >
-              <PixelHouseIcon size={22} />
-              <span className="pointer-events-none absolute right-[calc(100%+0.55rem)] top-1/2 -translate-y-1/2 rounded-md border border-cyan-100/15 bg-slate-950/95 px-2 py-1 font-space text-[9px] uppercase tracking-[0.14em] text-cyan-100/80 opacity-0 shadow-[0_0_20px_rgba(103,232,249,0.12)] transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                Home
-              </span>
-            </Link>
             <div className="group relative">
               <button
                 type="button"
