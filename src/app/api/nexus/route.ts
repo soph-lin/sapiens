@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
-import { errorResponse, jsonInput, parseJsonBody, requireDemoUser, requiredText } from "@/lib/learning/api";
+import { errorResponse, jsonInput, parseJsonBody, requireDemoUser, requiredText, ApiError } from "@/lib/learning/api";
 import { isTakeawayNoteContent, takeawayNoteBody } from "@/lib/learning/field-note-content";
+import { checkToxicity } from "@/lib/moderation/toxicity";
 import {
   starstreamAttachmentsView,
   starstreamLogBody,
   parseVisitorNoteContent,
   syncStarstreamLogFromFieldNote,
   toggleStarstreamLike,
+  TOXICITY_BLOCKED,
 } from "@/lib/learning/starstream";
 import { sourcePolicyFromClassroom } from "@/lib/orchestrator/agent/flourish";
 import type { StarstreamLogPost } from "@/app/nexus/data";
@@ -466,6 +468,10 @@ export async function POST(request: Request) {
       });
       if (!assignment) throw new Error("Voyage assignment not found.");
       const status = action === "publish-field-note" ? "published" as const : "draft" as const;
+      if (status === "published") {
+        const toxicity = await checkToxicity(noteBody);
+        if (!toxicity.allowed) throw new ApiError(400, TOXICITY_BLOCKED);
+      }
       const candidates = await prisma.fieldNote.findMany({
         where: { assignmentId: assignment.id, storyId: voyageId, authorId: user.id, authorType: "user" },
         orderBy: { updatedAt: "desc" },
@@ -481,7 +487,8 @@ export async function POST(request: Request) {
             publishedById: status === "published" ? (existing.publishedById ?? user.id) : null,
           },
         });
-        await syncStarstreamLogFromFieldNote(note);
+        const synced = await syncStarstreamLogFromFieldNote(note);
+        if (synced && "error" in synced) throw new ApiError(400, TOXICITY_BLOCKED);
       } else {
         const note = await prisma.fieldNote.create({
           data: {
@@ -494,7 +501,8 @@ export async function POST(request: Request) {
             publishedById: status === "published" ? user.id : null,
           },
         });
-        await syncStarstreamLogFromFieldNote(note);
+        const synced = await syncStarstreamLogFromFieldNote(note);
+        if (synced && "error" in synced) throw new ApiError(400, TOXICITY_BLOCKED);
       }
       return NextResponse.json(await snapshot(user.id));
     }

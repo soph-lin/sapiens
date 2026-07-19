@@ -2,8 +2,13 @@
 
 import { Send } from "lucide-react";
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { useUser } from "@/app/components/user/UserProvider";
 import { isTakeawayNoteContent } from "@/lib/learning/field-note-content";
+import {
+  TOXICITY_BLOCKED,
+  TOXICITY_RESUBMIT_MESSAGE,
+} from "@/lib/learning/starstream-constants";
 
 type VoyageTakeawayNoteProps = {
   storyId: string;
@@ -179,7 +184,12 @@ export default function VoyageTakeawayNote({
         error?: string;
       };
       if (!response.ok || !payload.note) {
-        throw new Error(payload.error ?? "Could not save field note.");
+        const apiError = payload.error ?? "Could not save field note.";
+        if (apiError === TOXICITY_BLOCKED) {
+          toast.error(TOXICITY_RESUBMIT_MESSAGE);
+          throw new Error(TOXICITY_RESUBMIT_MESSAGE);
+        }
+        throw new Error(apiError);
       }
       const parsed = parseNote(payload.note);
       if (!parsed) throw new Error("Could not save field note.");

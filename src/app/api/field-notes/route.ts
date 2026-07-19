@@ -3,7 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { assertAssignmentVisible, assertPublishedTargetStory, assignmentAccessInclude, assignmentIncludesStory, findAssignmentForAccess } from "@/lib/learning/access";
 import { ApiError, errorResponse, jsonInput, parseJsonBody, publicationStatus, requireDemoUser, requiredText } from "@/lib/learning/api";
 import { isPrivateNoteContent } from "@/lib/learning/field-note-content";
-import { syncStarstreamLogFromFieldNote } from "@/lib/learning/starstream";
+import { checkToxicity } from "@/lib/moderation/toxicity";
+import { starstreamLogBody, syncStarstreamLogFromFieldNote, TOXICITY_BLOCKED } from "@/lib/learning/starstream";
 
 export const runtime = "nodejs";
 
@@ -135,6 +136,10 @@ export async function POST(request: Request) {
     }
     const status = publicationStatus(body.status) ?? "draft";
     const content = noteContent(body);
+    if (status === "published") {
+      const toxicity = await checkToxicity(starstreamLogBody(content));
+      if (!toxicity.allowed) throw new ApiError(400, TOXICITY_BLOCKED);
+    }
     const sources = body.sources === undefined ? undefined : jsonInput(body.sources, "sources");
     const title = body.title === undefined ? undefined : requiredText(body.title, "title");
     // Always create — updates go through PATCH /api/field-notes/[id].
@@ -158,10 +163,11 @@ export async function POST(request: Request) {
         starstreamLog: { select: { id: true, type: true } },
       },
     });
-    await syncStarstreamLogFromFieldNote(note, {
+    const synced = await syncStarstreamLogFromFieldNote(note, {
       allowReplies: typeof body.allowReplies === "boolean" ? body.allowReplies : undefined,
       attachments: body.attachments,
     });
+    if (synced && "error" in synced) throw new ApiError(400, TOXICITY_BLOCKED);
     return NextResponse.json({ note: noteView(note) }, { status: 201 });
   } catch (error) {
     return errorResponse(error, "Could not save field note.");

@@ -26,6 +26,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import toast, { Toaster } from "react-hot-toast";
 import { SparklingStars } from "@/app/components/effects";
 import LoadingScreen from "@/app/components/loading/LoadingScreen";
 import ProgressLogPanel from "@/app/components/progress/ProgressLogPanel";
@@ -66,6 +67,10 @@ import {
   sendDomainMutation,
   userInitials,
 } from "./data";
+import {
+  TOXICITY_BLOCKED,
+  TOXICITY_RESUBMIT_MESSAGE,
+} from "@/lib/learning/starstream-constants";
 type Section =
   | "Overview"
   | "Voyages"
@@ -3424,10 +3429,19 @@ export default function NexusClient() {
     payload: unknown,
   ): Promise<boolean> => {
     setSnapshot(next);
-    const remote = await sendDomainMutation(action, payload);
-    if (!remote) return false;
-    setSnapshot(remote);
-    return true;
+    try {
+      const remote = await sendDomainMutation(action, payload);
+      if (!remote) return false;
+      setSnapshot(remote);
+      return true;
+    } catch (error) {
+      if (error instanceof Error && error.message === TOXICITY_BLOCKED) {
+        toast.error(TOXICITY_RESUBMIT_MESSAGE);
+        const remote = await requestDomainSnapshot();
+        if (remote) setSnapshot(remote);
+      }
+      return false;
+    }
   };
 
   const toggleStarstreamLike = async (logId: string): Promise<boolean> => {
@@ -3954,6 +3968,7 @@ export default function NexusClient() {
       sidebarOpen={sidebarOpen}
       setSidebarOpen={setSidebarOpen}
     >
+      <Toaster position="top-right" gutter={10} toastOptions={{ duration: 2800 }} />
       {isTeacher ? (
         <TeacherView
           snapshot={snapshot}
