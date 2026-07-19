@@ -19,10 +19,7 @@ import {
   type PlayerDirection,
   type PlayerPosition,
 } from "@/lib/game/movement";
-import {
-  PLAYER_SPEED,
-  STAND_TIME,
-} from "@/lib/game/config";
+import { PLAYER_SPEED, STAND_TIME } from "@/lib/game/config";
 import LoadingScreen from "@/app/components/loading/LoadingScreen";
 import ProgressLogPanel from "@/app/components/progress/ProgressLogPanel";
 import type { ProgressLogEntry } from "@/app/components/progress/ProgressLog";
@@ -255,6 +252,9 @@ export default function GameController() {
   const [direction, setDirection] = useState<PlayerDirection>("down");
   const [viewTiles, setViewTiles] = useState<ViewTiles>(DEFAULT_VIEW_TILES);
   const [rendererReady, setRendererReady] = useState(false);
+  const [starsStatus, setStarsStatus] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
   const [actorProgress, setActorProgress] = useState<ProgressLogEntry[]>([]);
   const documentRef = useRef<MapDocument | null>(null);
   const playerRef = useRef<PlayerPosition | null>(null);
@@ -406,6 +406,7 @@ export default function GameController() {
         } else {
           setStarError(null);
         }
+        setStarsStatus("ready");
       } catch (error) {
         if (!active) return;
         const raw =
@@ -416,6 +417,7 @@ export default function GameController() {
         // Any failure that leaves guests missing — including API/DB errors
         // like unknown Prisma fields — uses the NPC labels.
         setStarError(pickRandomLabel(NPC_ERROR_LABELS));
+        setStarsStatus("error");
       }
     }
     void loadStars();
@@ -587,9 +589,7 @@ export default function GameController() {
   );
   const targetItem = useMemo(
     () =>
-      document
-        ? findInteractableItem(document, player, direction)
-        : undefined,
+      document ? findInteractableItem(document, player, direction) : undefined,
     [direction, document, player],
   );
 
@@ -607,14 +607,12 @@ export default function GameController() {
     });
   }, [starError]);
 
-  if (mapStatus === "loading") {
-    return (
-      <>
-        <Toaster position="top-right" />
-        <LoadingScreen />
-      </>
-    );
-  }
+  // One continuous LoadingScreen for map + renderer settle + star NPCs.
+  // Avoid early-return remounts that flash a second screen.
+  const loading =
+    mapStatus === "loading" ||
+    starsStatus === "loading" ||
+    (mapStatus === "ready" && !rendererReady);
 
   return (
     <main className="map-home-page flex min-h-0 flex-col overflow-hidden">
@@ -637,13 +635,13 @@ export default function GameController() {
             playerDirection={direction}
             targetItem={targetItem}
           />
-          {!rendererReady ? (
-            <div className="fixed inset-0 z-200" data-map-overlay>
-              <LoadingScreen />
-            </div>
-          ) : null}
           <ProgressLogPanel entries={actorProgress} label="Actor progress" />
         </>
+      ) : null}
+      {loading ? (
+        <div className="fixed inset-0 z-200" data-map-overlay>
+          <LoadingScreen />
+        </div>
       ) : null}
     </main>
   );

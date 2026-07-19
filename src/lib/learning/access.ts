@@ -1,4 +1,4 @@
-import type { User, PublicationStatus } from "@/generated/prisma/client";
+import type { Prisma, User, PublicationStatus } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/learning/api";
 
@@ -19,6 +19,36 @@ export type AssignmentWithAccess = Awaited<ReturnType<typeof findAssignmentForAc
 
 export async function findAssignmentForAccess(id: string) {
   return prisma.classroomAssignment.findUnique({ where: { id }, include: assignmentAccessInclude });
+}
+
+/** Classroom access for a signed-in user: teachers own via teacherId; students via membership. */
+export function classroomWhereForUser(
+  user: Pick<User, "id" | "role">,
+): Prisma.ClassroomWhereInput {
+  return user.role === "teacher"
+    ? { teacherId: user.id }
+    : { memberships: { some: { userId: user.id } } };
+}
+
+/**
+ * Find a published classroom assignment that includes `storyId` for this user.
+ * Teachers match classrooms they teach; students match classrooms they belong to.
+ */
+export async function findPublishedAssignmentForStory(
+  user: Pick<User, "id" | "role">,
+  storyId: string,
+) {
+  return prisma.classroomAssignment.findFirst({
+    where: {
+      status: "published",
+      classroom: classroomWhereForUser(user),
+      OR: [
+        { storyId },
+        { journey: { voyages: { some: { storyId } } } },
+      ],
+    },
+    select: { id: true },
+  });
 }
 
 export function assignmentStoryIds(assignment: NonNullable<AssignmentWithAccess>) {

@@ -1432,7 +1432,7 @@ function TeacherView({
             onToggleLike={onToggleLike}
             focusPostId={focusPostId}
             emptyTitle="Starstream is quiet"
-            emptyBody="Published cadet notes will appear here, attached to their voyage."
+            emptyBody="Published notes from your fleet will appear here, attached to their voyage."
           />
         </section>
       )}

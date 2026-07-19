@@ -163,7 +163,9 @@ only adapts that view model into displayable UI.
 That controller loads the published
 map named `myroom`; a missing or failed map load shows an error without
 rendering a canvas, surfaced through the shared React Hot Toast UI instead of
-an inline status panel. Star/NPC load failures (and an empty guest list) use
+an inline status panel. The shared loading screen stays up until the map
+renderer has settled and star characters have finished loading from the voyage
+API. Star/NPC load failures (and an empty guest list) use
 the randomized `NPC_ERROR_LABELS` toast copy; actor/LLM failures during
 conversation use `BACKEND_ERROR_LABELS` toasts and a spoken `...` beat; Space
 closes the conversation instead of opening topics/follow-up. Raw API

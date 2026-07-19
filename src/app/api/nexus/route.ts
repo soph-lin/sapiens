@@ -181,7 +181,7 @@ async function snapshot(userId: string) {
       name: true,
       sourceMode: true,
       approvedDomains: true,
-      teacher: { select: { username: true, displayName: true } },
+      teacher: { select: { id: true, username: true, displayName: true } },
       memberships: {
         where: { user: { role: "student" } },
         orderBy: { user: { displayName: "asc" } },
@@ -194,6 +194,10 @@ async function snapshot(userId: string) {
   });
   const cadetIds = classroom?.memberships.map((membership) => membership.userId) ?? [];
   const cadetCount = cadetIds.length;
+  // Captains and cadets both share /home visitor notes into the classroom feed.
+  const classroomVisitorAuthorIds = classroom
+    ? [...new Set([classroom.teacher.id, ...cadetIds])]
+    : [];
   const fieldNotes = await prisma.fieldNote.findMany({
     where: {
       AND: [
@@ -202,9 +206,9 @@ async function snapshot(userId: string) {
           { story: { createdById: userId } },
           { authorId: userId },
         ] },
-        isStudent
-          ? { OR: [{ status: "published" as const }, { authorId: userId }] }
-          : { status: "published" as const },
+        // Teachers and students both need their own draft notes (actor visitor drafts).
+        // Published notes remain visible within assignment/story access above.
+        { OR: [{ status: "published" as const }, { authorId: userId }] },
       ],
     },
     orderBy: { createdAt: "desc" },
@@ -216,16 +220,16 @@ async function snapshot(userId: string) {
     author: { select: { username: true, displayName: true } },
   } as const;
   // Roots: classroom assignments, own solo stories, own posts (e.g. home visitor
-  // notes with no assignment), and classmate visitor notes in the same classroom.
+  // notes with no assignment), and classroom visitor notes from captain + cadets.
   const starstreamVisibility: Prisma.StarstreamLogWhereInput[] = [
     { assignmentId: { in: assignments.map((assignment) => assignment.id) } },
     { story: { createdById: userId } },
     { authorId: userId },
   ];
-  if (cadetIds.length) {
+  if (classroomVisitorAuthorIds.length) {
     starstreamVisibility.push({
       type: "visitorNote",
-      authorId: { in: isTeacher ? cadetIds : [...new Set([...cadetIds, userId])] },
+      authorId: { in: classroomVisitorAuthorIds },
     });
   }
   const starstreamRoots = await prisma.starstreamLog.findMany({

@@ -42,7 +42,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           : requiredText(body.commentary, "commentary");
       const result = await publishVisitorNoteToStarstream({
         note,
-        publisher: { id: user.id, displayName: user.displayName },
+        publisher: { id: user.id, displayName: user.displayName, role: user.role },
         commentary,
         voyageTopic: note.story.topic,
       });

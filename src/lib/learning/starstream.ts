@@ -1,4 +1,5 @@
-import type { FieldNote, FieldNoteAuthorType, Prisma } from "@/generated/prisma/client";
+import type { FieldNote, FieldNoteAuthorType, Prisma, User } from "@/generated/prisma/client";
+import { findPublishedAssignmentForStory } from "@/lib/learning/access";
 import { VISITOR_NOTE_HEADER } from "@/lib/learning/starstream-constants";
 import { prisma } from "@/lib/prisma";
 
@@ -150,7 +151,7 @@ export async function syncStarstreamLogFromFieldNote(
 /** Publish a bot visitor FieldNote to Starstream as type visitorNote. */
 export async function publishVisitorNoteToStarstream(input: {
   note: PublishableNote;
-  publisher: { id: string; displayName: string };
+  publisher: { id: string; displayName: string; role: User["role"] };
   commentary?: string | null;
   voyageTopic?: string;
 }) {
@@ -179,17 +180,10 @@ export async function publishVisitorNoteToStarstream(input: {
   const attachments = normalizeAttachments(sources) ?? [];
   let assignmentId = note.assignmentId;
   if (!assignmentId) {
-    const linked = await prisma.classroomAssignment.findFirst({
-      where: {
-        status: "published",
-        classroom: { memberships: { some: { userId: publisher.id } } },
-        OR: [
-          { storyId: note.storyId },
-          { journey: { voyages: { some: { storyId: note.storyId } } } },
-        ],
-      },
-      select: { id: true },
-    });
+    const linked = await findPublishedAssignmentForStory(
+      { id: publisher.id, role: publisher.role },
+      note.storyId,
+    );
     assignmentId = linked?.id ?? null;
   }
   const data = {
