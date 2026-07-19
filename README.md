@@ -32,6 +32,8 @@ try sapiens now at [sapiens.sophli.in](http://sapiens.sophli.in)
 
 the stars look forward to your arrival.
 
+<img src="public/icons/pixel-ship.png" width="100" alt="Logo">
+
 ## pages
 
 `/` auraful hero page
