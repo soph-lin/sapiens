@@ -50,13 +50,19 @@ the stars look forward to your arrival.
 
 `codex` was used to code the platform and come up with ideas for product & architecture. i found that it works very well for generating core functionality, solving quite a few tricky bugs without hallucination or cyclic failures where it keeps repeating the same solution, and ui eval via preview. it's a lot faster than cursor and feels nicer to use, especially with the new gpt 5.6 models. even when it doesn't get the specs in one shot and forgets certain details, it's easy to ask it to fix in subsequent fixes.
 
-i tried creating a fleet of agents (orchestrator, designer, dev, eval, housekeeper) in [`.brain/team`](.brain/team) to build the platform at some point early on, but i found that it doesn't work that well since the subagents codex would spin up would often halt or not respond to main thread when prompted. then codex would choose to continue along the main thread instead. but there is probably some setting i'm missing here to actually use multiagent mode properly.
+it was also nice to use to generate mock data and come up with different free-text prompts to run the story gen processes on to cover edge cases, as well as one-shot design ui when i wasn't too sure how it shape out and shape from there.
+
+i tried creating a fleet of agents (orchestrator, designer, dev, eval, housekeeper) in [`.brain/team`](.brain/team) to build the platform at some point early on, though i had to experiment with the level and type of task to see what it would be good for. sometimes the subagents would time out too early, but maybe that was some config on my end i could fixed.
 
 overall pretty pleased by codex's results and will definitely be using it to build future projects.
 
 `gpt 5.6` model was used when developing in codex, i did not use any other models. i used `gpt 5.6 luna` medium and high mode for different tasks. i also tried `sol` but didn't try it enough to figure the difference; `luna` was sufficient for my tasks.
 
 the model `gpt 5.6 luna` was used in the story-generation _steering_ multi-agent workflow and other llm functions that make _sapiens_ come alive, but also keep stories and answers about historical events grounded.
+
+below you can see all the main codex chats (some minor fix chats were archived) used to create the project. a good mix of technical implementation and design discussion used for codex.
+
+<img src="public/codex-usage.png" width="800" alt="codex-usage">
 
 ## making sapiens
 
