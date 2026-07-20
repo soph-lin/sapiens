@@ -36,6 +36,12 @@ export type FunctionToolDefinition = {
 export type BuiltInToolDefinition = {
   /** A provider-native Responses API tool, such as OpenAI web search. */
   type: "web_search";
+  filters?: {
+    /** Restrict OpenAI web-search results to these bare host names. */
+    allowed_domains?: string[];
+    /** Exclude these bare host names from OpenAI web-search results. */
+    blocked_domains?: string[];
+  };
 };
 
 export type AnthropicWebSearchToolDefinition = {

@@ -71,7 +71,20 @@ export const wikipediaTools: ToolDefinition[] = [
   },
 ];
 
-export const webSearchTool: ToolDefinition = { type: "web_search" };
+/**
+ * Build the OpenAI Responses API web-search tool. Restricted classroom runs
+ * pass their approved domains here so the provider filters search results
+ * before they reach the researcher.
+ */
+export function webSearchTool(allowedDomains?: string[]): ToolDefinition {
+  const domains = allowedDomains?.filter(Boolean);
+  return {
+    type: "web_search",
+    ...(domains?.length
+      ? { filters: { allowed_domains: domains } }
+      : {}),
+  };
+}
 
 export const pixelLabTools: ToolDefinition[] = [
   {

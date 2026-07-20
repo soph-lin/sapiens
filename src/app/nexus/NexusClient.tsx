@@ -4166,6 +4166,11 @@ export default function NexusClient() {
         <ProgressLogPanel
           entries={voyageGeneration.entries}
           label="Voyage generation debug"
+          onTerminate={
+            voyageGeneration.status === "running"
+              ? terminateVoyageGeneration
+              : undefined
+          }
         />
       ) : null}
       {composerKind && (

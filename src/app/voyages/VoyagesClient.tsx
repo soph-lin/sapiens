@@ -11,7 +11,7 @@ import {
   LoaderCircle,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { GradientBackground } from "@/app/components/effects";
 
 type Run = {
@@ -66,6 +66,46 @@ function isDoneVoyage(run: Run) {
 
 function date(value: string | null) {
   return value ? new Date(value).toLocaleString() : "In progress";
+}
+
+function elapsedMs(startedAt: string, finishedAt: string | null) {
+  if (!finishedAt) return null;
+  const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return Math.floor(ms);
+}
+
+function formatElapsed(ms: number, withMillis: boolean) {
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.floor((ms % 60_000) / 1000);
+  const base = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  if (!withMillis) return base;
+  return `${base}:${String(ms % 1000).padStart(3, "0")}`;
+}
+
+function ElapsedCell({
+  startedAt,
+  finishedAt,
+  onShowTooltip,
+  onHideTooltip,
+}: {
+  startedAt: string;
+  finishedAt: string | null;
+  onShowTooltip: (event: MouseEvent<HTMLElement>, text: string) => void;
+  onHideTooltip: () => void;
+}) {
+  const ms = elapsedMs(startedAt, finishedAt);
+  if (ms === null) return "—";
+  const exact = formatElapsed(ms, true);
+  return (
+    <span
+      aria-label={`Elapsed ${exact}`}
+      onMouseEnter={(event) => onShowTooltip(event, exact)}
+      onMouseLeave={onHideTooltip}
+    >
+      {formatElapsed(ms, false)}
+    </span>
+  );
 }
 
 function pillClass(selected: boolean) {
@@ -138,7 +178,7 @@ export default function VoyagesClient() {
       {tooltip && (
         <div
           role="tooltip"
-          className="pointer-events-none fixed z-[100] w-64 rounded-lg border border-amber-200/20 bg-[#071219] px-3 py-2 text-left font-mono text-[10px] leading-4 text-amber-100 shadow-xl shadow-black/50"
+          className="pointer-events-none fixed z-[100] w-max max-w-64 rounded-lg border border-amber-200/20 bg-[#071219] px-3 py-2 text-left font-mono text-[10px] leading-4 text-amber-100 shadow-xl shadow-black/50"
           style={{
             left: tooltip.left,
             top: tooltip.top,
@@ -206,13 +246,14 @@ export default function VoyagesClient() {
             />
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-left">
+            <table className="w-full min-w-[1040px] text-left">
               <thead className="border-b border-white/10 font-mono text-[9px] uppercase tracking-[.2em] text-cyan-200/50">
                 <tr>
                   <th className="px-3 py-3">Story</th>
                   <th className="px-3 py-3">Run</th>
                   <th className="px-3 py-3">Star</th>
                   <th className="px-3 py-3">Started</th>
+                  <th className="px-3 py-3">Time</th>
                   <th className="px-3 py-3">Steering</th>
                   <th className="px-3 py-3">Topic</th>
                   <th className="px-3 py-3">Source</th>
@@ -329,6 +370,23 @@ export default function VoyagesClient() {
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 font-mono text-[10px] text-white/40">
                         {date(run.startedAt)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 font-mono text-[10px] tabular-nums text-white/40">
+                        <ElapsedCell
+                          startedAt={run.startedAt}
+                          finishedAt={run.finishedAt}
+                          onShowTooltip={(event, text) => {
+                            const rect =
+                              event.currentTarget.getBoundingClientRect();
+                            setTooltip({
+                              text,
+                              left: rect.left,
+                              top: rect.top,
+                              above: rect.top > window.innerHeight / 2,
+                            });
+                          }}
+                          onHideTooltip={() => setTooltip(null)}
+                        />
                       </td>
                       <td className="max-w-xs px-3 py-4 font-medium text-white/65">
                         {run.steering || "—"}

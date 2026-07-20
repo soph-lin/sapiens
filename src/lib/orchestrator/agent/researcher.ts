@@ -338,7 +338,14 @@ export async function researcher(
       progress: context.emitProgress,
       maxOutputTokens: context.maxOutputTokens,
       signal: context.signal,
-      tools: [...(useWikipedia ? wikipediaTools : []), webSearchTool],
+      tools: [
+        ...(useWikipedia ? wikipediaTools : []),
+        webSearchTool(
+          context.flourish.sourceMode === "restricted"
+            ? context.flourish.approvedDomains
+            : undefined,
+        ),
+      ],
       handlers: {
         wikipedia_search: async (raw) => {
           const args = JSON.parse(raw) as { query: string };

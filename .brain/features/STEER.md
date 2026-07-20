@@ -26,6 +26,12 @@ Bonus task: choosing star character
 
 The shared execution context carries limits, progress, retries, and usage.
 
+When classroom source policy is Restricted, Researcher passes the approved
+domains to OpenAI's native Responses API web-search filter. The application
+still validates returned source URLs after generation; native filtering limits
+what the model can discover, while validation protects the saved research
+brief.
+
 ## Important files
 
 Config for model types and limits: [src/lib/orchestrator/config.ts](../../src/lib/orchestrator/config.ts)
