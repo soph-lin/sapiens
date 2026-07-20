@@ -23,6 +23,15 @@ export type ResearchBrief = {
   furtherReading: GroundingSource[];
 };
 
+type ResearchSourceDraft = Omit<GroundingSource, "domain">;
+
+type ResearchDraft = {
+  topic: string;
+  articleUrl: string;
+  sources: ResearchSourceDraft[];
+  furtherReading: ResearchSourceDraft[];
+};
+
 export type ResearchRequest = {
   historicalEvent: string;
   sourceSearchTerms?: string;
@@ -324,15 +333,48 @@ export async function researcher(
       "en.wikipedia.org".endsWith(`.${domain}`),
   );
   const useWikipedia = context.flourish.sourceMode === "free" || wikipediaApproved;
-  return withAgentRetries(context, "researcher", async ({ previousError }) =>
-    context.modelClient("researcher").generateJson<ResearchBrief>({
-      agent: "researcher",
+  const baseInstructions = await loadAgentPrompt("researcher");
+  const sourceItemSchema = {
+    type: "object",
+    properties: {
+      title: { type: "string", minLength: 1 },
+      url: { type: "string", minLength: 1 },
+      kind: { type: "string", enum: ["article", "video"] },
+      keyPoints: { type: "array", items: { type: "string" } },
+    },
+    required: ["title", "url", "kind", "keyPoints"],
+    additionalProperties: false,
+  };
+  const researchSchema = (name: string) => ({
+    name,
+    schema: {
+      type: "object",
+      properties: {
+        topic: { type: "string", minLength: 1 },
+        articleUrl: { type: "string", minLength: 1 },
+        sources: {
+          type: "array",
+          minItems: context.flourish.requiredSources,
+          maxItems: context.flourish.requiredSources,
+          items: sourceItemSchema,
+        },
+        furtherReading: {
+          type: "array",
+          maxItems: context.flourish.maxFollowupSources,
+          items: sourceItemSchema,
+        },
+      },
+      required: ["topic", "articleUrl", "sources", "furtherReading"],
+      additionalProperties: false,
+    },
+  });
+
+  return withAgentRetries(context, "researcher", async ({ previousError }) => {
+    exactCandidateUrl = null;
+    const modelClient = context.modelClient("researcher");
+    const toolConfig = {
+      agent: "researcher" as const,
       model: AGENT_CONFIG.researcher.model,
-      instructions: appendRetryContext(
-        await loadAgentPrompt("researcher"),
-        previousError,
-      ),
-      prompt: JSON.stringify({ request, config: context.flourish }),
       usage: context.usage,
       trace: context.emitTrace,
       progress: context.emitProgress,
@@ -347,7 +389,7 @@ export async function researcher(
         ),
       ],
       handlers: {
-        wikipedia_search: async (raw) => {
+        wikipedia_search: async (raw: string) => {
           const args = JSON.parse(raw) as { query: string };
           context.emitProgress({
             agent: "researcher",
@@ -355,9 +397,6 @@ export async function researcher(
             message: "Searching Wikipedia for relevant pages…",
             tool: "wikipedia_search",
           });
-          // Keep the Curator's focused terms intact. The model may still choose
-          // among the returned candidates, but it cannot silently broaden or
-          // abbreviate the query into a different subject.
           const query = request.sourceSearchTerms || args.query;
           const results = prioritizeExactTitle(
             await context.wikipedia.searchPages(query),
@@ -393,93 +432,141 @@ export async function researcher(
         },
         ...sectionHandlers,
       },
-      schema: {
-        name: "research_article",
-        schema: {
-          type: "object",
-          properties: {
-            topic: { type: "string", minLength: 1 },
-            articleUrl: { type: "string", minLength: 1 },
-            sources: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  title: { type: "string", minLength: 1 },
-                  url: { type: "string", minLength: 1 },
-                  kind: { type: "string", enum: ["article", "video"] },
-                  keyPoints: { type: "array", items: { type: "string" } },
-                },
-                required: ["title", "url", "kind", "keyPoints"],
-                additionalProperties: false,
-              },
-            },
-            furtherReading: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  title: { type: "string", minLength: 1 },
-                  url: { type: "string", minLength: 1 },
-                  kind: { type: "string", enum: ["article", "video"] },
-                  keyPoints: { type: "array", items: { type: "string" } },
-                },
-                required: ["title", "url", "kind", "keyPoints"],
-                additionalProperties: false,
-              },
-            },
-          },
-          required: ["topic", "articleUrl", "sources", "furtherReading"],
-          additionalProperties: false,
-        },
-      },
-    }).then((generation) => {
-      assertFocusedSelection(request, generation.output, exactCandidateUrl);
-      const sources = validateGroundingSources(
-        generation.output.sources,
-        context.flourish,
-        "sources",
-      );
-      if (sources.length !== context.flourish.requiredSources) {
-        throw new Error(`Researcher must return exactly ${context.flourish.requiredSources} primary sources`);
+    };
+
+    context.emitProgress({
+      agent: "researcher",
+      phase: "agent",
+      message: "Collecting and validating the source set…",
+    });
+    const collection = await modelClient.generateJson<ResearchDraft>({
+      ...toolConfig,
+      instructions: appendRetryContext(
+        `${baseInstructions}\n\nINTERNAL PHASE 1 — SOURCE COLLECTION\nUse your tools to gather and inspect enough approved sources to satisfy the exact primary-source count. Return the source set and concise evidence only. Do not stop after finding one good article.`,
+        previousError,
+      ),
+      prompt: JSON.stringify({
+        phase: "collect_sources",
+        request,
+        config: context.flourish,
+      }),
+      schema: researchSchema("research_sources"),
+    });
+
+    const collectedSources = validateGroundingSources(
+      collection.output.sources,
+      context.flourish,
+      "collected sources",
+    );
+    if (collectedSources.length !== context.flourish.requiredSources) {
+      throw new Error(`Researcher must collect exactly ${context.flourish.requiredSources} primary sources`);
+    }
+    const collectedFurtherReading = validateFurtherReading(
+      collection.output.furtherReading,
+      context.flourish,
+      collectedSources.map((source) => source.url),
+    );
+    const collectedBrief: ResearchBrief = {
+      topic: collection.output.topic,
+      articleUrl: collection.output.articleUrl,
+      sources: collectedSources,
+      furtherReading: collectedFurtherReading,
+    };
+    assertFocusedSelection(request, collectedBrief, exactCandidateUrl);
+
+    context.emitProgress({
+      agent: "researcher",
+      phase: "agent",
+      message: `Collected ${collectedSources.length} approved primary sources. Synthesizing the research brief…`,
+      details: { sources: collectedSources.map((source) => source.url) },
+    });
+    const synthesis = await modelClient.generateJson<ResearchDraft>({
+      agent: "researcher",
+      model: AGENT_CONFIG.researcher.model,
+      instructions: `${baseInstructions}\n\nINTERNAL PHASE 2 — SYNTHESIS\nNo tools are available in this phase. Use only the collected source set below. Return the final JSON contract. Do not add, replace, or invent URLs. Keep exactly the collected primary-source count.`,
+      prompt: JSON.stringify({
+        phase: "synthesize",
+        request,
+        config: context.flourish,
+        collected: collectedBrief,
+      }),
+      usage: context.usage,
+      trace: context.emitTrace,
+      progress: context.emitProgress,
+      maxOutputTokens: context.maxOutputTokens,
+      signal: context.signal,
+      schema: researchSchema("research_article"),
+    });
+
+    const sources = validateGroundingSources(
+      synthesis.output.sources,
+      context.flourish,
+      "sources",
+    );
+    if (sources.length !== context.flourish.requiredSources) {
+      throw new Error(`Researcher must return exactly ${context.flourish.requiredSources} primary sources`);
+    }
+    const collectedUrls = new Set([
+      ...collectedSources.map((source) => source.url),
+      ...collectedFurtherReading.map((source) => source.url),
+    ]);
+    const inventedSource = sources.find((source) => !collectedUrls.has(source.url));
+    if (inventedSource) {
+      throw new Error(`Synthesis introduced a source not present in the collected set: ${inventedSource.url}`);
+    }
+    const wikipediaSource = sources.find((source) => source.domain === "en.wikipedia.org");
+    if (context.flourish.sourceMode === "free" && !wikipediaSource) {
+      throw new Error("Free-mode sources must include the best-fitting English Wikipedia article");
+    }
+    assertFocusedSelection(request, {
+      ...synthesis.output,
+      sources,
+      furtherReading: [],
+    }, exactCandidateUrl);
+    if (useWikipedia && exactCandidateUrl && wikipediaSource) {
+      const exactTitle = titleFromWikipediaUrl(exactCandidateUrl);
+      const selectedTitle = titleFromWikipediaUrl(wikipediaSource.url);
+      if (
+        exactTitle &&
+        selectedTitle &&
+        normalizedTitle(exactTitle) !== normalizedTitle(selectedTitle)
+      ) {
+        throw new Error(
+          `Primary Wikipedia source must be the exact-match candidate (${exactTitle}), not a sub-aspect`,
+        );
       }
-      const wikipediaSource = sources.find((source) => source.domain === "en.wikipedia.org");
-      if (context.flourish.sourceMode === "free" && !wikipediaSource) {
-        throw new Error("Free-mode sources must include the best-fitting English Wikipedia article");
-      }
-      if (useWikipedia && exactCandidateUrl && wikipediaSource) {
-        const exactTitle = titleFromWikipediaUrl(exactCandidateUrl);
-        const selectedTitle = titleFromWikipediaUrl(wikipediaSource.url);
-        if (
-          exactTitle &&
-          selectedTitle &&
-          normalizedTitle(exactTitle) !== normalizedTitle(selectedTitle)
-        ) {
-          throw new Error(
-            `Primary Wikipedia source must be the exact-match candidate (${exactTitle}), not a sub-aspect`,
-          );
-        }
-      }
-      const primarySource = wikipediaSource ?? sources[0];
-      if (generation.output.articleUrl !== primarySource.url) {
-        generation.output.articleUrl = primarySource.url;
-      }
-      const furtherReading = validateFurtherReading(generation.output.furtherReading, context.flourish, sources.map((source) => source.url));
-      sources.forEach((source, index) => context.emitProgress({
+    }
+    const primarySource = wikipediaSource ?? sources[0];
+    const furtherReading = validateFurtherReading(
+      synthesis.output.furtherReading,
+      context.flourish,
+      sources.map((source) => source.url),
+    );
+    const inventedFurtherReading = furtherReading.find(
+      (source) => !collectedUrls.has(source.url),
+    );
+    if (inventedFurtherReading) {
+      throw new Error(`Synthesis introduced further reading not present in the collected set: ${inventedFurtherReading.url}`);
+    }
+    sources.forEach((source, index) => context.emitProgress({
+      agent: "researcher",
+      phase: "agent",
+      message: `Selected source ${index + 1}: ${source.title} — ${source.url}`,
+      details: source,
+    }));
+    if (context.flourish.furtherReading && context.flourish.sourceMode === "restricted" && furtherReading.length === 0) {
+      context.emitProgress({
         agent: "researcher",
         phase: "agent",
-        message: `Selected source ${index + 1}: ${source.title} — ${source.url}`,
-        details: source,
-      }));
-      if (context.flourish.furtherReading && context.flourish.sourceMode === "restricted" && furtherReading.length === 0) {
-        context.emitProgress({
-          agent: "researcher",
-          phase: "agent",
-          message: "Further reading requested, but no additional approved sources were available in Restricted mode.",
-          details: { furtherReadingUnavailable: true, approvedDomains: context.flourish.approvedDomains },
-        });
-      }
-      return { ...generation.output, sources, furtherReading };
-    }),
-  );
+        message: "Further reading requested, but no additional approved sources were available in Restricted mode.",
+        details: { furtherReadingUnavailable: true, approvedDomains: context.flourish.approvedDomains },
+      });
+    }
+    return {
+      topic: synthesis.output.topic,
+      articleUrl: primarySource.url,
+      sources,
+      furtherReading,
+    };
+  });
 }

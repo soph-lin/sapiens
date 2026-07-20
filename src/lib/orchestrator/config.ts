@@ -65,7 +65,7 @@ export const ORCHESTRATOR_CONFIG = {
   anthropicBaseUrl: "https://api.anthropic.com",
   wikipediaBaseUrl: "https://en.wikipedia.org",
   pixelLabBaseUrl: "https://api.pixellab.ai/v2",
-  maxToolRounds: 4,
+  maxToolRounds: 10,
   maxOutputTokens: 32000,
   /** Max plain-text characters returned per oversized Wikipedia section chunk. */
   pageChunkChars: 8000,

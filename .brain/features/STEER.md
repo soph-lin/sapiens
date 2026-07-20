@@ -99,6 +99,12 @@ Director. The full contract and genre definitions remain authoritative in
 
 ### Researcher
 
+Researcher runs in two internal passes: a tool-using collection pass gathers
+and validates the required approved source set, then a no-tools synthesis pass
+formats the final brief from only those collected URLs. This keeps source
+retrieval from consuming the final response budget and prevents synthesis from
+introducing uncollected sources.
+
 **Input**
 
 ```json
