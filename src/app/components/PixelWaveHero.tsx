@@ -32,12 +32,42 @@ const TRANSITION_PHASE_HOLD = 5000;
 /** Morph duration between phases (lower = faster) */
 const MORPH_MS = 1100;
 
+/** Wave brightness controls — tune these together to shape the sea's falloff. */
+/** Global brightness multiplier applied across the full wave field. */
+const WAVE_BRIGHTNESS_BASE = 3;
+/** Peak multiplier relative to BASE (3 = 3x BASE at the peak). */
+const WAVE_BRIGHTNESS_PEAK = 1;
+/** Peak position as a fraction of the full canvas/page height (0 = top).
+ * Negative values clamp to the top of the visible page. */
+const WAVE_BRIGHTNESS_PEAK_PAGE_POSITION = 0.2;
+/** Page-height distance used to ease into the peak from above. */
+const WAVE_BRIGHTNESS_TOP_FADE_SPAN_PAGE = 0.1;
+/** How close the top of the page starts to the eventual peak brightness. */
+const WAVE_BRIGHTNESS_TOP_PEAK_FRACTION = 0.78;
+/** Distance from the peak to the base brightness, as a page-height fraction. */
+const WAVE_BRIGHTNESS_FADE_SPAN_PAGE = 0.3;
+/** How much the waves fade as they continue through the lower page. */
+const WAVE_PAGE_FADE_STRENGTH = 0.88;
+/** Wave geometry density — densest at the configured peak section. */
+const WAVE_ROW_PEAK_PAGE_POSITION = 0.1;
+const WAVE_ROW_PEAK_DENSITY = 0.95;
+const WAVE_ROW_EDGE_DENSITY = 0.5;
+const WAVE_ROW_PEAK_LAYERS = 2;
+const WAVE_ROW_EDGE_LAYERS = 2;
+const WAVE_ROW_PEAK_SIZE = 1.2;
+/** Higher values spread the row-density ramp more gently around the peak. */
+const WAVE_ROW_DENSITY_EASE = 1.2;
+/** Controls how tightly depth rows gather around the peak depth. */
+const WAVE_ROW_DEPTH_EASE = 1.05;
+/** Remove the old near-field brightness lift as depth increases. */
+const WAVE_DEPTH_BRIGHTNESS_FALLOFF = 0.65;
+
 /**
  * Lock a phase for testing.
  * - `"default"` — normal cycle (ship → random transition → ship…)
  * - any Phase — freeze fully formed on that scene
  */
-const FORCE_PHASE: Phase | "default" = "default";
+const FORCE_PHASE: Phase | "default" = "ship";
 
 /** Non-ship phases the cycle can morph into */
 const TRANSITION_PHASES: Phase[] = [
@@ -640,18 +670,60 @@ export function PixelWaveHero() {
       const cols = Math.max(48, Math.floor(w / 14));
       const pageMul = Math.max(1, h / Math.max(stageH, 1));
       const rows = Math.min(72, Math.floor(42 * (0.85 + pageMul * 0.35)));
+      const vanishY = stageH * 0.38;
+      const nearY = Math.max(stageH * 0.92, h * 0.94);
+      const peakPageY =
+        h * Math.max(0, Math.min(1, WAVE_ROW_PEAK_PAGE_POSITION));
+      const peakDepth = Math.max(
+        0.18,
+        Math.min(
+          0.92,
+          Math.pow(
+            Math.max(0, Math.min(1, (peakPageY - vanishY) / (nearY - vanishY))),
+            1 / 1.35,
+          ),
+        ),
+      );
+      const upperRowCount = Math.max(1, Math.floor(rows * 0.42));
       for (let row = 0; row < rows; row++) {
-        const depth = row / (rows - 1);
-        const rowCols = Math.floor(cols * (0.45 + depth * 0.7));
+        // Cluster depth rows around the configured peak: sparse above it,
+        // densest directly beneath the boat, then sparse again below it.
+        let depth: number;
+        if (row < upperRowCount) {
+          const progress = row / Math.max(1, upperRowCount - 1);
+          depth = peakDepth * (1 - Math.pow(1 - progress, WAVE_ROW_DEPTH_EASE));
+        } else {
+          const progress =
+            (row - upperRowCount) / Math.max(1, rows - upperRowCount - 1);
+          depth =
+            peakDepth +
+            (1 - peakDepth) * Math.pow(progress, WAVE_ROW_DEPTH_EASE);
+        }
+        const peakProximity =
+          depth <= peakDepth
+            ? depth / peakDepth
+            : (1 - depth) / (1 - peakDepth);
+        const easedProximity = Math.pow(
+          Math.max(0, Math.min(1, peakProximity)),
+          WAVE_ROW_DENSITY_EASE,
+        );
+        const rowDensity =
+          WAVE_ROW_EDGE_DENSITY +
+          (WAVE_ROW_PEAK_DENSITY - WAVE_ROW_EDGE_DENSITY) * easedProximity;
+        const rowCols = Math.max(24, Math.floor(cols * rowDensity));
         for (let col = 0; col < rowCols; col++) {
           const nx = (col + 0.5) / rowCols;
-          const layers = depth > 0.35 ? 3 : 2;
+          const layers =
+            peakProximity > 0.55 ? WAVE_ROW_PEAK_LAYERS : WAVE_ROW_EDGE_LAYERS;
           for (let layer = 0; layer < layers; layer++) {
             waves.push({
               nx: nx + (Math.random() - 0.5) * 0.01,
               depth: Math.min(1, depth + layer * 0.012),
               shade: 0.25 + Math.random() * 0.75,
-              size: 1 + depth * 1.2 + (Math.random() < 0.15 ? 0.8 : 0),
+              size:
+                1 +
+                peakProximity * WAVE_ROW_PEAK_SIZE +
+                (Math.random() < 0.15 ? 0.8 : 0),
               phase: Math.random() * 0.4,
             });
           }
@@ -1125,8 +1197,69 @@ export function PixelWaveHero() {
 
     const drawWaves = (t: number, alphaMul: number) => {
       if (alphaMul < 0.01) return;
-      const foldStart = stageH * 0.52;
+      const peakPosition = Math.max(
+        0,
+        Math.min(1, WAVE_BRIGHTNESS_PEAK_PAGE_POSITION),
+      );
+      const fadeEndPosition = Math.min(
+        1,
+        peakPosition + WAVE_BRIGHTNESS_FADE_SPAN_PAGE,
+      );
+      const topFadeStartPosition = Math.max(
+        0,
+        peakPosition - WAVE_BRIGHTNESS_TOP_FADE_SPAN_PAGE,
+      );
+      const brightnessFadeEndY = h * fadeEndPosition;
+      const brightnessPeakY = h * peakPosition;
+      const brightnessTopFadeStartY = h * topFadeStartPosition;
+      // Keep the lower-page fade attached to the brightness window. This
+      // prevents the page-stretched wave density from creating a second
+      // apparent brightness peak after the configured fade has completed.
+      const foldStart = Math.max(stageH * 0.52, brightnessFadeEndY);
       const foldSpan = Math.max(1, h - foldStart);
+
+      /**
+       * Apply the hero-only lift by projected canvas y, not wave depth. A
+       * depth-based multiplier would brighten distant and near waves
+       * inconsistently because perspective maps each depth to a different
+       * screen height. Smoothstep keeps the transition continuous at both
+       * ends, and the lower boundary is exactly the current brightness.
+       */
+      const brightnessAtY = (y: number) => {
+        // Both ends use full-page coordinates, so changing the peak moves
+        // the complete brightness window instead of only its starting edge.
+        const peakBrightness = WAVE_BRIGHTNESS_BASE * WAVE_BRIGHTNESS_PEAK;
+        const topBrightness =
+          WAVE_BRIGHTNESS_BASE +
+          (peakBrightness - WAVE_BRIGHTNESS_BASE) *
+            WAVE_BRIGHTNESS_TOP_PEAK_FRACTION;
+        const topProgress = Math.max(
+          0,
+          Math.min(
+            1,
+            (y - brightnessTopFadeStartY) /
+              Math.max(1, brightnessPeakY - brightnessTopFadeStartY),
+          ),
+        );
+        const topEased = topProgress * topProgress * (3 - 2 * topProgress);
+        if (y <= brightnessPeakY) {
+          return topBrightness + (peakBrightness - topBrightness) * topEased;
+        }
+
+        const fadeProgress = Math.max(
+          0,
+          Math.min(
+            1,
+            (y - brightnessPeakY) /
+              Math.max(1, brightnessFadeEndY - brightnessPeakY),
+          ),
+        );
+        const fadeEased = fadeProgress * fadeProgress * (3 - 2 * fadeProgress);
+        return (
+          peakBrightness + (WAVE_BRIGHTNESS_BASE - peakBrightness) * fadeEased
+        );
+      };
+
       for (let i = 0; i < waves.length; i++) {
         const wp = waves[i];
         const { x, y, slope, crest, depth } = projectWave(
@@ -1137,16 +1270,23 @@ export function PixelWaveHero() {
 
         // Soften past mid-stage so the sea blends into the meaning section
         const pastFold = Math.max(0, Math.min(1, (y - foldStart) / foldSpan));
-        const foldFade = 1 - pastFold * 0.88;
+        const foldFade = 1 - pastFold * WAVE_PAGE_FADE_STRENGTH;
 
         const lit = 0.35 + slope * 0.35 + Math.max(0, crest) * 0.2;
-        const depthFade = 0.2 + depth * 0.75;
+        const depthFade = Math.max(
+          0.2,
+          0.95 - depth * WAVE_DEPTH_BRIGHTNESS_FALLOFF,
+        );
+        const brightness = brightnessAtY(y);
         const alpha = Math.min(
-          0.95,
-          wp.shade * lit * depthFade * 0.85 * alphaMul * foldFade,
+          1,
+          Math.min(
+            0.95,
+            wp.shade * lit * depthFade * 0.85 * alphaMul * foldFade,
+          ) * brightness,
         );
         if (alpha < 0.02) continue;
-        const base = 160 + lit * 70 + depth * 20;
+        const base = 160 + lit * 70 - depth * 20;
         const g = Math.floor(Math.min(255, base));
         const r = Math.floor(g * (crest > 0.2 ? 1 : 0.88));
         const b = Math.floor(Math.min(255, g * (crest > 0.2 ? 0.95 : 1.08)));
@@ -1155,7 +1295,10 @@ export function PixelWaveHero() {
         ctx.fillRect(x, y, s, s);
 
         if (crest > 0.65 && depth > 0.4 && wp.shade > 0.6 && foldFade > 0.45) {
-          ctx.fillStyle = `rgba(255,255,255,${(0.35 + depth * 0.35) * alphaMul * foldFade})`;
+          ctx.fillStyle = `rgba(255,255,255,${Math.min(
+            1,
+            (0.35 + depth * 0.35) * alphaMul * foldFade * brightness,
+          )})`;
           ctx.fillRect(x, y - s * 0.6, s * 0.8, s * 0.8);
         }
       }
