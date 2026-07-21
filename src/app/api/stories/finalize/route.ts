@@ -8,6 +8,7 @@ import { ageRangeToDb, isAgeRange, type AgeRange } from "@/lib/orchestrator/agen
 import { normalizeFlourishConfig, validateFurtherReading, validateGroundingSources, validateReportText, type StoryReport } from "@/lib/orchestrator/agent/flourish";
 import { isConcreteHistoricalPeriod } from "@/lib/orchestrator/agent/curator-shared";
 import { requireDemoUser } from "@/lib/learning/api";
+import { artist, type ArtistPlan } from "@/lib/orchestrator/agent/artist";
 
 export const runtime = "nodejs";
 
@@ -175,7 +176,7 @@ export async function POST(request: Request) {
     const collectible = body.director?.collectible;
     const collectibleName = requiredString(collectible?.name, "director.collectible.name");
     const collectibleDescription = requiredString(collectible?.desc, "director.collectible.desc");
-    const assets = body.assets ?? [];
+    let assets = body.assets ?? [];
     const characterInputs = characters.map((character) => {
       const ageRange = requiredString(character.ageRange, `character.ageRange for ${character.name ?? "unknown character"}`);
       if (!isAgeRange(ageRange)) {
@@ -192,6 +193,72 @@ export async function POST(request: Request) {
       if (!characterInputs.some((character) => character.name.toLocaleLowerCase() === starName.toLocaleLowerCase())) {
         throw new Error("director.starCharacter must match a director character");
       }
+    }
+
+    const missingCharacters = characterInputs.filter(
+      (character) => !findAsset(assets, "character", character.name, undefined, character.ageRange),
+    );
+    const missingSprite = starCharacter
+      ? !assets.some(
+          (candidate) =>
+            candidate.type === "character_sprite" &&
+            candidate.name === starCharacter.name &&
+            (candidate.frameKey === "south" || candidate.frameKey === undefined),
+        )
+      : false;
+    let artistOutput = body.outputs?.artist;
+    if (missingCharacters.length || missingSprite) {
+      const starBrief = starCharacter
+        ? {
+            name: requiredString(starCharacter.name, "director.starCharacter.name"),
+            desc: requiredString(starCharacter.desc, "director.starCharacter.desc"),
+            ageRange: characterInputs.find(
+              (character) => character.name.toLocaleLowerCase() === starCharacter.name?.toLocaleLowerCase(),
+            )!.ageRange,
+          }
+        : null;
+      const repairEvents: AssetInput[] = [];
+      const repairPlan: ArtistPlan = {
+        characters: missingCharacters.map(({ name, description, ageRange }) => ({
+          name,
+          desc: description,
+          ageRange,
+        })),
+        starCharacter: missingSprite ? starBrief : null,
+        collectible: { name: collectibleName, desc: collectibleDescription },
+      };
+      const repairOutput = await artist(
+        repairPlan,
+        {
+          onAsset: (event) => {
+            if (event.frames?.length) {
+              repairEvents.push(
+                ...event.frames.map((frame) => ({
+                  type: event.type,
+                  name: event.name,
+                  frameKey: frame.frameKey,
+                  dataUrl: frame.dataUrl,
+                  assetId: event.assetId,
+                  metadata: event.metadata,
+                  ageRange: event.ageRange,
+                })),
+              );
+              return;
+            }
+            repairEvents.push({
+              type: event.type,
+              name: event.name,
+              assetId: event.assetId,
+              dataUrl: event.imageDataUrls[0],
+              metadata: event.metadata,
+              ageRange: event.ageRange,
+            });
+          },
+        },
+        { skipCollectible: true },
+      );
+      assets = [...assets, ...repairEvents];
+      artistOutput = repairOutput;
     }
 
     const progress = Array.isArray(body.progress) ? body.progress : [];
@@ -320,7 +387,7 @@ export async function POST(request: Request) {
               curatorOutput: outputs.curator === undefined ? undefined : outputs.curator as Prisma.InputJsonValue,
               directorOutput: outputs.director === undefined ? undefined : outputs.director as Prisma.InputJsonValue,
               writerOutput: outputs.writer === undefined ? undefined : outputs.writer as Prisma.InputJsonValue,
-              artistOutput: outputs.artist === undefined ? undefined : outputs.artist as Prisma.InputJsonValue,
+              artistOutput: artistOutput === undefined ? undefined : artistOutput as Prisma.InputJsonValue,
               finishedAt: new Date(),
             } },
         },

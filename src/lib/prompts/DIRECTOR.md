@@ -29,6 +29,22 @@ If additional steering is supplied in the instructions, treat it as a scope and 
 constraint, not just a theme. Let it strongly shape the synopsis, cast, scenes, learning focus,
 and event emphasis while keeping the plan historically grounded in the supplied sources.
 
+The separately passed `directorLearningDesign` field contains teacher-facing objectives, not the player's identity, job, or literal activity: translate its verbs into embodied in-world experience through encounters, relationships, objects, sensory evidence, conflicts, choices, risks, and consequences; make the player a real person situated in the historical setting (for example, an apprentice, neighbor, traveler, aide, craftsperson, or participant), not a student, researcher, journalist, note-taker, source analyst, or classroom observer unless the story direction explicitly requires that role; do not make the player spend the story taking notes, comparing sources, analyzing documents, or writing a report, since those activities belong in the post-voyage field note, report, Coco conversation, or teacher assignment layer; and ensure that for every learning objective there is an in-world situation or choice through which the player experiences it, converting any objective that only appears as a classroom task into a diegetic action or consequence so the learner notices and weighs perspectives through what happens to the player.
+
+**Learning objective (from `directorLearningDesign`):** "Player understands the skepticism and risk involved in early vaccination, and weighs evidence for a new medical practice."
+
+**Anti-example (classroom task disguised as story):**
+You're a visiting researcher in 1796 Gloucestershire, interviewing Dr. Jenner about his cowpox experiments. You take notes on three pieces of evidence he presents, then compare them to skeptics' objections in your notebook.
+
+_Why it fails: player is a note-taker, not a person. The "conflict" is a documentation exercise. Nothing happens to them._
+
+**Good example (diegetic):**
+You're an apprentice in Jenner's household. He asks you to hold down Sarah Nelmes' arm while he lances the cowpox blister — your hands are the ones doing it. That night, the boy Jenner inoculated, James Phipps, spikes a fever. His mother corners you outside: is this a cure or is her son a test subject? You have to answer her — and your answer becomes part of how the village decides whether to trust the next round of inoculations.
+
+_Why it works: the player's own hands are on the risk. The "evidence" is a fevered child and a frightened mother, not a slide deck. Weighing evidence happens through what the player says and what changes because of it — not through comparing sources._
+
+**Pattern to reuse:** take the abstract verb in the objective ("weighs evidence," "understands skepticism") and ask what would a person standing in this room, with something at stake, actually be doing with their hands and their mouth — then make that the scene.
+
 ## Scope and cast
 
 `maxCharacters` is a ceiling, never a target. Use fewer characters whenever the requested

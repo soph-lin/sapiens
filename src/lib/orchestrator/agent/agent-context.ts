@@ -55,6 +55,8 @@ export type AgentExecutionOptions = {
   maxOutputTokens?: number;
   signal?: AbortSignal;
   directorSteering?: string;
+  /** Classroom learning design, kept separate from in-world story direction. */
+  directorLearningDesign?: string;
   flourish?: Partial<FlourishConfig>;
   openai?: OpenAIClient;
   anthropic?: AnthropicClient;
@@ -89,6 +91,7 @@ export function createAgentContext(options: AgentExecutionOptions = {}) {
     maxOutputTokens: options.maxOutputTokens ?? ORCHESTRATOR_CONFIG.maxOutputTokens,
     signal: options.signal,
     directorSteering: options.directorSteering?.trim(),
+    directorLearningDesign: options.directorLearningDesign?.trim(),
     flourish: normalizeFlourishConfig(options.flourish),
     openai,
     anthropic,

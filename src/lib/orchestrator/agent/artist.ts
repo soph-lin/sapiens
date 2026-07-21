@@ -38,6 +38,10 @@ export type ArtistOutput = {
   }>;
 };
 
+export type ArtistRunOptions = {
+  skipCollectible?: boolean;
+};
+
 type ArtistAssetOutput = {
   asset: Record<string, unknown>;
 };
@@ -197,16 +201,19 @@ async function generateAsset(
 export async function artist(
   plan: ArtistPlan,
   options: AgentExecutionOptions = {},
+  runOptions: ArtistRunOptions = {},
 ): Promise<ArtistOutput> {
   const context = createAgentContext(options);
   const assets: ArtistOutput["assets"] = [];
 
-  const existing = await context.characterAssetStore.findByNamesAndAgeRanges(
-    plan.characters.map((character) => ({
-      name: character.name,
-      ageRange: character.ageRange,
-    })),
-  );
+  const existing = plan.characters.length
+    ? await context.characterAssetStore.findByNamesAndAgeRanges(
+        plan.characters.map((character) => ({
+          name: character.name,
+          ageRange: character.ageRange,
+        })),
+      )
+    : [];
   const existingByKey = new Map<string, (typeof existing)[number]>();
   for (const asset of existing) {
     const ageRange = ageRangeFromDb(asset.ageRange) ?? "adult";
@@ -289,17 +296,19 @@ export async function artist(
     }
   }
 
-  const collectible = await generateAsset(
-    context,
-    "collectible",
-    plan.collectible,
-    options,
-  );
-  assets.push({
-    type: "collectible",
-    name: plan.collectible.name,
-    asset: collectible,
-  });
+  if (!runOptions.skipCollectible) {
+    const collectible = await generateAsset(
+      context,
+      "collectible",
+      plan.collectible,
+      options,
+    );
+    assets.push({
+      type: "collectible",
+      name: plan.collectible.name,
+      asset: collectible,
+    });
+  }
 
   return { assets };
 }

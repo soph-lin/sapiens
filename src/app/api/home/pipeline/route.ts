@@ -157,12 +157,11 @@ export async function POST(request: Request) {
           }
 
           const idea = body.idea!;
-          const storySteering = [
-            idea.plotDirection,
+          const storySteering = idea.plotDirection;
+          const directorLearningDesign =
             typeof idea.lessonPlan === "string" && idea.lessonPlan.trim()
-              ? `Lesson plan / learning focus: ${idea.lessonPlan.trim()}`
-              : "",
-          ].filter(Boolean).join("\n");
+              ? idea.lessonPlan.trim()
+              : undefined;
           const options = {
             usage,
             progress,
@@ -173,6 +172,7 @@ export async function POST(request: Request) {
             },
             limits: DEFAULT_STORY_LIMITS as StoryLimits,
             directorSteering: storySteering,
+            directorLearningDesign,
             signal: request.signal,
             maxTries: ORCHESTRATOR_CONFIG.maxTries,
             maxOutputTokens: ORCHESTRATOR_CONFIG.maxOutputTokens,

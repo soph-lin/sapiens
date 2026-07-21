@@ -51,6 +51,9 @@ Definitions for clients: [src/lib/providers](../../src/lib/providers)
   replay and inspection. Runs are listed at `/voyages` and displayed
   in the steer console at `/steer/:slug`.
 - Successful runs can be finalized as playable voyages.
+- Finalization checks required character portraits and the star character sprite before
+  saving. If either is missing from the streamed asset set, it runs Artist for the
+  missing character asset(s) and retries the save with those assets included.
 
 ## Agent i/o
 
@@ -92,7 +95,10 @@ an innovative story about Europe in the Middle Ages
 ```
 
 `voyage` may be `null` when classroom-facing metadata is not useful. The Researcher
-remains responsible for source gathering and classroom source-policy enforcement.
+remains responsible for source gathering and classroom source-policy enforcement. When a
+`lessonPlan` is present, it is passed to Director in the `directorLearningDesign` field as
+separate teacher-facing learning design; it must not be concatenated into in-world story
+steering or treated as the player's literal occupation or activity.
 
 Researcher receives `idea.historicalEvent` for context, `idea.plotDirection` for downstream
 story scope, and `idea.sourceSearchTerms` as the authoritative focused search input. The

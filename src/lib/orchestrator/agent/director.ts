@@ -56,7 +56,7 @@ export async function director(
     agent: "director",
     model: AGENT_CONFIG.director.model,
     instructions: appendRetryContext(
-      `${await loadAgentPrompt("director")}${context.directorSteering ? `\n\nSteer the story strongly in this direction:\n${context.directorSteering}` : ""}`,
+      `${await loadAgentPrompt("director")}${context.directorSteering ? `\n\nStory direction (in-world scope and point of view):\n${context.directorSteering}` : ""}${context.directorLearningDesign ? `\n\nClassroom learning design (teacher-facing constraints; do not literalize as the player's occupation or actions):\n${context.directorLearningDesign}` : ""}`,
       previousError,
     ),
     prompt: JSON.stringify({
