@@ -53,7 +53,6 @@ import {
   type ClassroomSettings,
   type CrewMember,
   type FieldNote,
-  type Journey,
   type NexusSnapshot,
   type PublishState,
   type StarstreamLogPost,
@@ -792,6 +791,23 @@ function VoyageReportDialog({
         <ReportMarkdown className="mt-6" sources={voyage.report.sources}>
           {voyage.report.reportText}
         </ReportMarkdown>
+        <h3 className="mt-6 font-space text-[9px] uppercase tracking-[0.18em] text-white/35">
+          Sources
+        </h3>
+        <ol className="mt-3 list-decimal space-y-2 pl-5 text-xs text-cyan-100/70">
+          {voyage.report.sources.map((source) => (
+            <li key={source}>
+              <a
+                href={source}
+                target="_blank"
+                rel="noreferrer"
+                className="break-all underline decoration-cyan-100/25 underline-offset-2 hover:text-cyan-50"
+              >
+                {source}
+              </a>
+            </li>
+          ))}
+        </ol>
       </section>
     </div>
   );
@@ -1837,12 +1853,11 @@ function StarstreamPostCard({
   const [replyBody, setReplyBody] = useState("");
   const [replyError, setReplyError] = useState<string | null>(null);
   const [replyState, setReplyState] = useState<"idle" | "saving">("idle");
-  const [focusReplyId, setFocusReplyId] = useState<string | null>(null);
-  const [pendingFocusNewest, setPendingFocusNewest] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
   const replyButtonRef = useRef<HTMLButtonElement>(null);
   const replyTextareaRef = useRef<HTMLTextAreaElement>(null);
   const replyCountAtSubmitRef = useRef(0);
+  const pendingFocusNewestRef = useRef(false);
   const initials = userInitials(post.authorName);
   const replyCount = post.replies.length;
   const replyLabel = `${replyCount} repl${replyCount === 1 ? "y" : "ies"}`;
@@ -1861,30 +1876,30 @@ function StarstreamPostCard({
 
   useEffect(() => {
     if (!composeOpen) return;
-    const timer = window.setTimeout(() => replyTextareaRef.current?.focus(), 40);
+    const timer = window.setTimeout(
+      () => replyTextareaRef.current?.focus(),
+      40,
+    );
     return () => window.clearTimeout(timer);
   }, [composeOpen]);
 
   useEffect(() => {
-    if (!pendingFocusNewest) return;
+    if (!pendingFocusNewestRef.current) return;
     if (replyCount <= replyCountAtSubmitRef.current) return;
     const newest = post.replies[post.replies.length - 1];
-    setPendingFocusNewest(false);
-    if (newest) setFocusReplyId(newest.id);
-  }, [pendingFocusNewest, replyCount, post.replies]);
-
-  useEffect(() => {
-    if (!focusReplyId) return;
-    const node = document.getElementById(`starstream-post-${focusReplyId}`);
+    pendingFocusNewestRef.current = false;
+    if (!newest) return;
+    const node = document.getElementById(`starstream-post-${newest.id}`);
     if (!node) return;
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
     node.scrollIntoView({
       behavior: reduceMotion ? "auto" : "smooth",
       block: "nearest",
     });
     if (node instanceof HTMLElement) node.focus({ preventScroll: true });
-    setFocusReplyId(null);
-  }, [focusReplyId]);
+  }, [replyCount, post.replies]);
 
   const toggleLike = async () => {
     if (likeState === "saving") return;
@@ -1937,8 +1952,10 @@ function StarstreamPostCard({
     setReplyError(null);
     try {
       replyCountAtSubmitRef.current = replyCount;
+      pendingFocusNewestRef.current = true;
       const ok = await onReply(post.id, body);
       if (!ok) {
+        pendingFocusNewestRef.current = false;
         setReplyError("Couldn’t post reply. Try again.");
         setReplyState("idle");
         return;
@@ -1947,11 +1964,14 @@ function StarstreamPostCard({
       setComposeOpen(false);
       setRepliesOpen(true);
       setReplyState("idle");
-      setPendingFocusNewest(true);
     } catch (error) {
+      pendingFocusNewestRef.current = false;
       if (error instanceof Error && error.message === TOXICITY_BLOCKED) {
         setReplyError(TOXICITY_RESUBMIT_MESSAGE);
-      } else if (error instanceof Error && error.message === "replies_disabled") {
+      } else if (
+        error instanceof Error &&
+        error.message === "replies_disabled"
+      ) {
         toast.error("Replies are turned off for this post.");
         setReplyState("idle");
         setComposeOpen(false);
@@ -2193,7 +2213,10 @@ function StarstreamPostCard({
                           />
                         </label>
                         {replyError ? (
-                          <p role="alert" className="mt-2 text-xs text-rose-100/80">
+                          <p
+                            role="alert"
+                            className="mt-2 text-xs text-rose-100/80"
+                          >
                             {replyError}
                           </p>
                         ) : null}
@@ -2214,7 +2237,10 @@ function StarstreamPostCard({
                             className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-cyan-200 px-3 text-xs font-medium text-[#071014] transition hover:bg-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:opacity-50"
                           >
                             {replyState === "saving" ? (
-                              <LoaderCircle size={13} className="animate-spin" />
+                              <LoaderCircle
+                                size={13}
+                                className="animate-spin"
+                              />
                             ) : (
                               <Send size={13} />
                             )}
@@ -3927,7 +3953,9 @@ export default function NexusClient() {
         throw new Error("Pipeline outputs were incomplete.");
       const reportSources = sourceUrlsFromReport(writerOutput.report);
       if (!reportSources.length)
-        throw new Error("The generated voyage report did not include any sources.");
+        throw new Error(
+          "The generated voyage report did not include any sources.",
+        );
       addProgress(
         {
           agent: "system",
@@ -4174,7 +4202,11 @@ export default function NexusClient() {
       sidebarOpen={sidebarOpen}
       setSidebarOpen={setSidebarOpen}
     >
-      <Toaster position="top-right" gutter={10} toastOptions={{ duration: 2800 }} />
+      <Toaster
+        position="top-right"
+        gutter={10}
+        toastOptions={{ duration: 2800 }}
+      />
       {isTeacher ? (
         <TeacherView
           snapshot={snapshot}
