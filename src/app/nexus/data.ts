@@ -35,22 +35,11 @@ export type Voyage = {
   cadetsCompleted?: number;
 };
 
-export type Journey = {
-  id: string;
-  title: string;
-  description: string;
-  voyageIds: string[];
-  status: PublishState;
-  /** Username of the assignee when scoped to a student view. */
-  assignedTo: string;
-};
-
 export type Assignment = {
   id: string;
   assignmentId?: string;
-  kind: "voyage" | "journey";
+  kind: "voyage";
   voyageId?: string;
-  journeyId?: string;
   title?: string;
   status?: PublishState;
   lessonPlan?: string;
@@ -145,7 +134,6 @@ export type CadetProgress = {
 
 export type NexusSnapshot = {
   voyages: Voyage[];
-  journeys: Journey[];
   assignments: Assignment[];
   fieldNotes: FieldNote[];
   starstreamLogs: StarstreamLogPost[];
@@ -158,7 +146,6 @@ export type NexusSnapshot = {
 /** Empty workspace while the domain snapshot loads from the API. */
 export const EMPTY_SNAPSHOT: NexusSnapshot = {
   voyages: [],
-  journeys: [],
   assignments: [],
   fieldNotes: [],
   starstreamLogs: [],
@@ -174,7 +161,6 @@ export function cloneSnapshot(snapshot: NexusSnapshot): NexusSnapshot {
 function normalizeSnapshot(data: Partial<NexusSnapshot>): NexusSnapshot | null {
   if (
     !Array.isArray(data.voyages) ||
-    !Array.isArray(data.journeys) ||
     !Array.isArray(data.assignments) ||
     !Array.isArray(data.fieldNotes)
   ) {
@@ -198,8 +184,9 @@ function normalizeSnapshot(data: Partial<NexusSnapshot>): NexusSnapshot | null {
       cadetsCompleted:
         typeof voyage.cadetsCompleted === "number" ? voyage.cadetsCompleted : 0,
     })),
-    journeys: data.journeys,
-    assignments: data.assignments,
+    assignments: data.assignments.filter(
+      (assignment): assignment is Assignment => assignment.kind === "voyage",
+    ),
     fieldNotes: data.fieldNotes,
     starstreamLogs: Array.isArray(data.starstreamLogs)
       ? data.starstreamLogs.map((log) => ({
@@ -283,12 +270,10 @@ export function assignmentKeyForVoyage(
   snapshot: NexusSnapshot,
   voyageId: string,
 ): string | null {
-  const matches = snapshot.assignments.filter(
-    (assignment) =>
-      assignment.kind === "voyage" && assignment.voyageId === voyageId,
-  );
   const assignment =
-    matches.find((item) => !item.journeyId) ?? matches.at(0) ?? null;
+    snapshot.assignments.find(
+      (item) => item.kind === "voyage" && item.voyageId === voyageId,
+    ) ?? null;
   if (!assignment) return null;
   return assignment.assignmentId ?? assignment.id;
 }

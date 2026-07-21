@@ -141,7 +141,6 @@ async function snapshot(userId: string) {
   const progress = isStudent ? await prisma.voyageProgress.findMany({ where: { studentId: userId } }) : [];
   const progressByStory = new Map(progress.map((entry) => [entry.storyId, entry]));
   const stories = new Map<string, { id: string; slug: string; title: string; topic: string; period: string; scene: string; lessonPlan: string; sources: string[]; status: "draft" | "published"; publishedAt?: string; report?: unknown; ownerId?: string; stream?: "classroom" | "solo"; completed?: boolean; completedAt?: string; collectible?: { name: string; description: string; assetUrl: string } | null; cadetsCompleted?: number }>();
-  const journeys = assignments.flatMap((assignment) => assignment.journey ? [{ id: assignment.journey.id, title: assignment.journey.title, description: assignment.journey.description ?? "", voyageIds: assignment.journey.voyages.map((voyage) => voyage.storyId), status: assignment.journey.status, assignedTo: assignee }] : []);
   for (const assignment of assignments) {
     const targets = assignment.story ? [assignment.story] : assignment.journey?.voyages.map((voyage) => voyage.story) ?? [];
     for (const story of targets) {
@@ -379,15 +378,22 @@ async function snapshot(userId: string) {
     : [];
   return {
     voyages: [...stories.values()],
-    journeys,
     assignments: assignments.flatMap((assignment) => {
       const details = assignmentDetails(assignment);
       const voyageIds = assignment.story ? [assignment.story.id] : assignment.journey?.voyages.map((voyage) => voyage.storyId) ?? [];
-      const voyageAssignments = voyageIds.map((voyageId) => {
+      return voyageIds.map((voyageId) => {
         const item = progress.find((entry) => entry.storyId === voyageId);
-        return { id: `${assignment.id}-${voyageId}`, ...details, kind: "voyage" as const, voyageId, ...(assignment.journey ? { journeyId: assignment.journey.id } : {}), assignedTo: assignee, state: item?.completed ? "complete" as const : item ? "in-progress" as const : "not-started" as const, progress: item?.completed ? 100 : item ? 50 : 0, due: item?.completed ? "Complete" : "Friday" };
+        return {
+          id: `${assignment.id}-${voyageId}`,
+          ...details,
+          kind: "voyage" as const,
+          voyageId,
+          assignedTo: assignee,
+          state: item?.completed ? "complete" as const : item ? "in-progress" as const : "not-started" as const,
+          progress: item?.completed ? 100 : item ? 50 : 0,
+          due: item?.completed ? "Complete" : "Friday",
+        };
       });
-      return assignment.journey ? [{ id: assignment.id, ...details, kind: "journey" as const, journeyId: assignment.journey.id, assignedTo: assignee, state: "in-progress" as const, progress: Math.round(voyageAssignments.reduce((sum, item) => sum + item.progress, 0) / Math.max(1, voyageAssignments.length)), due: "Friday" }, ...voyageAssignments] : voyageAssignments;
     }),
     fieldNotes: fieldNotes.map((note) => ({ id: note.id, voyageId: note.storyId, authorId: note.author.username, authorName: note.authorName ?? note.author.displayName, authorType: note.authorType, sources: Array.isArray(note.sources) ? note.sources.filter((source): source is string => typeof source === "string") : [], body: takeawayNoteBody(note.content).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(), status: note.status === "published" ? "published" as const : "draft" as const, createdAt: note.createdAt.toISOString() })),
     starstreamLogs: starstreamRoots.map((log) => mapStarstreamLog(log, userId)),
@@ -448,15 +454,7 @@ export async function POST(request: Request) {
       return NextResponse.json(await snapshot(user.id));
     }
     if (user.role === "teacher" && (action === "publish-journey" || action === "save-journey")) {
-      const title = requiredText(payload.title, "title");
-      const voyageIds = Array.isArray(payload.voyageIds) ? payload.voyageIds.filter((id): id is string => typeof id === "string") : [];
-      if (!voyageIds.length) throw new Error("A journey needs at least one voyage.");
-      const classroom = await prisma.classroom.findFirst({ where: { teacherId: user.id } });
-      if (!classroom) throw new Error("Demo classroom is not initialized.");
-      const status = action === "publish-journey" ? "published" as const : "draft" as const;
-      const journey = await prisma.journey.create({ data: { title, description: requiredText(payload.description, "description"), createdById: user.id, status, publishedAt: status === "published" ? new Date() : null, voyages: { create: voyageIds.map((storyId, position) => ({ storyId, position })) } } });
-      await prisma.classroomAssignment.create({ data: { classroomId: classroom.id, createdById: user.id, journeyId: journey.id, title, status, publishedAt: status === "published" ? new Date() : null } });
-      return NextResponse.json(await snapshot(user.id));
+      throw new ApiError(400, "Journey creation is not supported.");
     }
     if (user.role === "student" && (action === "publish-field-note" || action === "save-field-note")) {
       const voyageId = requiredText(payload.voyageId, "voyageId");

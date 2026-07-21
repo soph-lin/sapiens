@@ -80,7 +80,6 @@ type Section =
   | "Cadets"
   | "Crew"
   | "Settings";
-type ComposerKind = "voyage" | "journey";
 type ComposerMode = "manual" | "imagine";
 type ComposerStatus = "idle" | "saving" | "saved" | "error";
 type ImagineStatus = "idle" | "curating" | "ready" | "error";
@@ -101,7 +100,6 @@ type VoyageGeneration = {
 
 type AssignmentEditorData = {
   id: string;
-  kind: "voyage" | "journey";
   targetTitle: string;
   title: string;
   status: PublishState;
@@ -181,12 +179,6 @@ type VoyageForm = {
   sources: string[];
 };
 
-type JourneyForm = {
-  title: string;
-  description: string;
-  voyageIds: string[];
-};
-
 const navItems: { label: Section; icon: typeof Compass }[] = [
   { label: "Overview", icon: Compass },
   { label: "Voyages", icon: BookOpen },
@@ -227,11 +219,6 @@ const emptyVoyageForm: VoyageForm = {
   scene: "",
   lessonPlan: "",
   sources: [],
-};
-const emptyJourneyForm: JourneyForm = {
-  title: "",
-  description: "",
-  voyageIds: [],
 };
 
 function Tooltip({
@@ -892,8 +879,7 @@ function AssignmentEditorDialog({
               {readOnly ? "Assignment" : "Edit assignment"}
             </h2>
             <p className="mt-2 text-sm text-white/40">
-              {assignment.kind === "voyage" ? "Voyage" : "Journey"} ·{" "}
-              {assignment.targetTitle} ·{" "}
+              Voyage · {assignment.targetTitle} ·{" "}
               {assignment.status === "published" ? "Ready" : "Planning"}
             </p>
           </div>
@@ -1003,7 +989,7 @@ function TeacherView({
 }: {
   snapshot: NexusSnapshot;
   section: Section;
-  onCreate: (kind: ComposerKind) => void;
+  onCreate: () => void;
   onClassroomUpdate: (classroom: ClassroomSettings) => void;
   onOpenAssignment: (assignmentId: string) => void;
   onOpenReport: (voyageId: string) => void;
@@ -1139,7 +1125,7 @@ function TeacherView({
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => onCreate("voyage")}
+              onClick={onCreate}
               className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-cyan-200 px-4 text-sm font-semibold text-[#071014] transition hover:bg-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-100/80"
             >
               <Sparkles size={16} /> Imagine
@@ -1297,7 +1283,7 @@ function TeacherView({
                   title="Your deck is clear"
                   body="Start with a specific voyage prompt for your cadets."
                   action="Imagine a voyage"
-                  onAction={() => onCreate("voyage")}
+                  onAction={onCreate}
                 />
               )}
             </section>
@@ -1342,7 +1328,7 @@ function TeacherView({
             action={
               <button
                 type="button"
-                onClick={() => onCreate("voyage")}
+                onClick={onCreate}
                 className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-cyan-200/20 bg-cyan-200/10 px-3 text-xs text-cyan-100 transition hover:bg-cyan-200/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70"
               >
                 <Sparkles size={14} /> Imagine
@@ -2424,19 +2410,11 @@ function SourceUrlList({
 }
 
 function CreationDialog({
-  kind: initialKind,
-  voyages,
   onClose,
   onSave,
 }: {
-  kind: ComposerKind;
-  voyages: Voyage[];
   onClose: () => void;
-  onSave: (
-    kind: ComposerKind,
-    values: VoyageForm | JourneyForm,
-    status: PublishState,
-  ) => Promise<void>;
+  onSave: (values: VoyageForm, status: PublishState) => Promise<void>;
 }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2445,40 +2423,25 @@ function CreationDialog({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
-  const [kind, setKind] = useState(initialKind);
-  const [mode, setMode] = useState<ComposerMode>(
-    initialKind === "voyage" ? "imagine" : "manual",
-  );
+  const [mode, setMode] = useState<ComposerMode>("imagine");
   const [voyage, setVoyage] = useState(emptyVoyageForm);
-  const [journey, setJourney] = useState(emptyJourneyForm);
   const [status, setStatus] = useState<ComposerStatus>("idle");
   const [imaginePrompt, setImaginePrompt] = useState("");
   const [imagineStatus, setImagineStatus] = useState<ImagineStatus>("idle");
   const [imagineError, setImagineError] = useState("");
   const imagineAbortRef = useRef<AbortController | null>(null);
   useEffect(() => () => imagineAbortRef.current?.abort(), []);
-  const publishedVoyages = voyages.filter(
-    (item) => item.status === "published",
-  );
   const updateVoyage = (
     key: Exclude<keyof VoyageForm, "sources">,
     value: string,
   ) => setVoyage((current) => ({ ...current, [key]: value }));
-  const canSubmit =
-    kind === "voyage" && mode === "manual"
-      ? Boolean(
-          voyage.title.trim() &&
-          voyage.topic.trim() &&
-          voyage.period.trim() &&
-          voyage.scene.trim() &&
-          voyage.lessonPlan.trim(),
-        )
-      : Boolean(
-          kind === "journey" &&
-          journey.title.trim() &&
-          journey.description.trim() &&
-          journey.voyageIds.length,
-        );
+  const canSubmit = Boolean(
+    voyage.title.trim() &&
+      voyage.topic.trim() &&
+      voyage.period.trim() &&
+      voyage.scene.trim() &&
+      voyage.lessonPlan.trim(),
+  );
   const imagine = async () => {
     const prompt = imaginePrompt.trim();
     if (!prompt || imagineStatus === "curating") return;
@@ -2506,29 +2469,21 @@ function CreationDialog({
     }
   };
   const submit = async (publishState: PublishState) => {
-    if (!canSubmit) return;
+    if (mode !== "manual" || !canSubmit) return;
     setStatus("saving");
-    const values = kind === "voyage" ? voyage : journey;
-    if (kind === "voyage" && publishState === "published") {
+    if (publishState === "published") {
       onClose();
-      void onSave(kind, values, publishState).catch(() => undefined);
+      void onSave(voyage, publishState).catch(() => undefined);
       return;
     }
     try {
-      await onSave(kind, values, publishState);
+      await onSave(voyage, publishState);
       setStatus("saved");
       window.setTimeout(onClose, 450);
     } catch {
       setStatus("error");
     }
   };
-  const toggleVoyage = (id: string) =>
-    setJourney((current) => ({
-      ...current,
-      voyageIds: current.voyageIds.includes(id)
-        ? current.voyageIds.filter((voyageId) => voyageId !== id)
-        : [...current.voyageIds, id],
-    }));
   return (
     <div
       className="fixed inset-0 z-[60] grid place-items-center bg-[#020608]/80 px-4 py-6 backdrop-blur-md"
@@ -2550,267 +2505,141 @@ function CreationDialog({
               id="creation-dialog-title"
               className="mt-2 font-display text-3xl tracking-[-0.03em] text-white"
             >
-              {kind === "voyage"
-                ? "Create a specific voyage"
-                : "Create a journey"}
+              Create a voyage
             </h2>
             <p className="mt-2 max-w-lg text-sm leading-6 text-white/40">
-              {kind === "voyage"
-                ? "Give one historical scene a clear question and a path through the evidence."
-                : "Sequence published voyages into one route and send it to your cadet."}
+              Give one historical scene a clear question and a path through the
+              evidence.
             </p>
           </div>
           <div className="flex items-center gap-1">
-            {kind === "voyage" && (
-              <IconButton
-                label={`Switch to ${mode === "imagine" ? "Manual" : "Imagine"} mode`}
-                onClick={() =>
-                  setMode((current) =>
-                    current === "imagine" ? "manual" : "imagine",
-                  )
-                }
-              >
-                {mode === "imagine" ? (
-                  <FileText size={16} />
-                ) : (
-                  <Sparkles size={16} />
-                )}
-              </IconButton>
-            )}
+            <IconButton
+              label={`Switch to ${mode === "imagine" ? "Manual" : "Imagine"} mode`}
+              onClick={() =>
+                setMode((current) =>
+                  current === "imagine" ? "manual" : "imagine",
+                )
+              }
+            >
+              {mode === "imagine" ? (
+                <FileText size={16} />
+              ) : (
+                <Sparkles size={16} />
+              )}
+            </IconButton>
             <IconButton label="Close creation dialog" onClick={onClose}>
               <X size={17} />
             </IconButton>
           </div>
         </div>
-        <div className="mt-7 grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-black/10 p-1">
-          <button
-            type="button"
-            onClick={() => {
-              setKind("voyage");
-              setMode("imagine");
-            }}
-            className={`min-h-10 rounded-lg text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 ${kind === "voyage" ? "bg-cyan-200 text-[#071014]" : "text-white/45 hover:text-white"}`}
-          >
-            Specific voyage
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setKind("journey");
-              setMode("manual");
-            }}
-            className={`min-h-10 rounded-lg text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 ${kind === "journey" ? "bg-cyan-200 text-[#071014]" : "text-white/45 hover:text-white"}`}
-          >
-            Journey / series
-          </button>
-        </div>
-        {kind === "voyage" ? (
-          mode === "imagine" ? (
-            <div className="mt-7 space-y-4">
-              <Field label="Explore...">
-                <textarea
-                  value={imaginePrompt}
-                  onChange={(event) => {
-                    setImaginePrompt(event.target.value);
-                    if (imagineStatus === "error") setImagineStatus("idle");
-                  }}
-                  placeholder="Describe the whole voyage you want your cadets to experience..."
-                  rows={8}
-                  autoFocus
-                  className={textareaClass}
+        {mode === "imagine" ? (
+          <div className="mt-7 space-y-4">
+            <Field label="Explore...">
+              <textarea
+                value={imaginePrompt}
+                onChange={(event) => {
+                  setImaginePrompt(event.target.value);
+                  if (imagineStatus === "error") setImagineStatus("idle");
+                }}
+                placeholder="Describe the whole voyage you want your cadets to experience..."
+                rows={8}
+                autoFocus
+                className={textareaClass}
+              />
+            </Field>
+            <SourceUrlList
+              value={voyage.sources}
+              onChange={(sources) =>
+                setVoyage((current) => ({ ...current, sources }))
+              }
+              optional
+            />
+            <div className="flex flex-col gap-3 rounded-xl border border-cyan-200/10 bg-cyan-200/[0.04] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs leading-5 text-white/45">
+                Curator will turn your description into a bounded historical
+                voyage for you to review.
+              </p>
+              <button
+                type="button"
+                onClick={() => void imagine()}
+                disabled={!imaginePrompt.trim() || imagineStatus === "curating"}
+                className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-cyan-200 px-3 text-xs font-semibold text-[#071014] transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-100/80"
+              >
+                {imagineStatus === "curating" ? "Shaping…" : "Shape voyage"}
+                <Sparkles size={13} />
+              </button>
+            </div>
+            {imagineStatus === "error" && (
+              <p role="alert" className="text-xs leading-5 text-orange-100/80">
+                {imagineError}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="mt-7 space-y-4">
+            <Field label="Voyage title" hint="Shown to cadets">
+              <input
+                value={voyage.title}
+                onChange={(event) => updateVoyage("title", event.target.value)}
+                placeholder="e.g. The Weight of a Grain"
+                autoFocus
+                className={inputClass}
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Topic">
+                <input
+                  value={voyage.topic}
+                  onChange={(event) => updateVoyage("topic", event.target.value)}
+                  placeholder="e.g. Ancient trade"
+                  className={inputClass}
                 />
               </Field>
+              <Field label="Historical period">
+                <input
+                  value={voyage.period}
+                  onChange={(event) =>
+                    updateVoyage("period", event.target.value)
+                  }
+                  placeholder="e.g. 5th century BCE"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+            <Field label="Scene prompt" hint="Where does the cadet arrive?">
+              <textarea
+                value={voyage.scene}
+                onChange={(event) => updateVoyage("scene", event.target.value)}
+                placeholder="Describe the moment, place, and tension…"
+                rows={3}
+                className={textareaClass}
+              />
+            </Field>
+            <Field label="Lesson plan" hint="What should they investigate?">
+              <textarea
+                value={voyage.lessonPlan}
+                onChange={(event) =>
+                  updateVoyage("lessonPlan", event.target.value)
+                }
+                placeholder="A short prompt for evidence-led exploration…"
+                rows={3}
+                className={textareaClass}
+              />
+            </Field>
+            {imagineStatus === "ready" && (
               <SourceUrlList
                 value={voyage.sources}
                 onChange={(sources) =>
                   setVoyage((current) => ({ ...current, sources }))
                 }
-                optional
               />
-              <div className="flex flex-col gap-3 rounded-xl border border-cyan-200/10 bg-cyan-200/[0.04] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs leading-5 text-white/45">
-                  Curator will turn your description into a bounded historical
-                  voyage for you to review.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void imagine()}
-                  disabled={
-                    !imaginePrompt.trim() || imagineStatus === "curating"
-                  }
-                  className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-cyan-200 px-3 text-xs font-semibold text-[#071014] transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-100/80"
-                >
-                  {imagineStatus === "curating" ? "Shaping…" : "Shape voyage"}
-                  <Sparkles size={13} />
-                </button>
-              </div>
-              {imagineStatus === "error" && (
-                <p
-                  role="alert"
-                  className="text-xs leading-5 text-orange-100/80"
-                >
-                  {imagineError}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="mt-7 space-y-4">
-              <Field label="Voyage title" hint="Shown to cadets">
-                <input
-                  value={voyage.title}
-                  onChange={(event) =>
-                    updateVoyage("title", event.target.value)
-                  }
-                  placeholder="e.g. The Weight of a Grain"
-                  autoFocus
-                  className={inputClass}
-                />
-              </Field>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Topic">
-                  <input
-                    value={voyage.topic}
-                    onChange={(event) =>
-                      updateVoyage("topic", event.target.value)
-                    }
-                    placeholder="e.g. Ancient trade"
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Historical period">
-                  <input
-                    value={voyage.period}
-                    onChange={(event) =>
-                      updateVoyage("period", event.target.value)
-                    }
-                    placeholder="e.g. 5th century BCE"
-                    className={inputClass}
-                  />
-                </Field>
-              </div>
-              <Field label="Scene prompt" hint="Where does the cadet arrive?">
-                <textarea
-                  value={voyage.scene}
-                  onChange={(event) =>
-                    updateVoyage("scene", event.target.value)
-                  }
-                  placeholder="Describe the moment, place, and tension…"
-                  rows={3}
-                  className={textareaClass}
-                />
-              </Field>
-              <Field label="Lesson plan" hint="What should they investigate?">
-                <textarea
-                  value={voyage.lessonPlan}
-                  onChange={(event) =>
-                    updateVoyage("lessonPlan", event.target.value)
-                  }
-                  placeholder="A short prompt for evidence-led exploration…"
-                  rows={3}
-                  className={textareaClass}
-                />
-              </Field>
-              {imagineStatus === "ready" && (
-                <SourceUrlList
-                  value={voyage.sources}
-                  onChange={(sources) =>
-                    setVoyage((current) => ({ ...current, sources }))
-                  }
-                />
-              )}
-              {imagineStatus === "ready" && (
-                <p className="rounded-xl border border-cyan-200/10 bg-cyan-200/[0.04] px-4 py-3 text-xs leading-5 text-cyan-50/65">
-                  Curator filled this draft from your description. Review the
-                  details, then optionally add exact sources before publishing.
-                </p>
-              )}
-            </div>
-          )
-        ) : (
-          <div className="mt-7 space-y-4">
-            <Field label="Journey title">
-              <input
-                value={journey.title}
-                onChange={(event) =>
-                  setJourney((current) => ({
-                    ...current,
-                    title: event.target.value,
-                  }))
-                }
-                placeholder="e.g. Routes of Belief"
-                autoFocus
-                className={inputClass}
-              />
-            </Field>
-            <Field label="Journey prompt" hint="What connects the series?">
-              <textarea
-                value={journey.description}
-                onChange={(event) =>
-                  setJourney((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-                placeholder="Describe the through-line for the route…"
-                rows={3}
-                className={textareaClass}
-              />
-            </Field>
-            <div>
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-space text-[9px] uppercase tracking-[0.15em] text-white/45">
-                    Order the voyages
-                  </p>
-                  <p className="mt-1 text-xs text-white/35">
-                    Choose at least one published voyage.
-                  </p>
-                </div>
-                <span className="font-space text-[9px] uppercase tracking-[0.12em] text-cyan-100/60">
-                  {journey.voyageIds.length} selected
-                </span>
-              </div>
-              <div className="mt-3 space-y-2">
-                {publishedVoyages.length ? (
-                  publishedVoyages.map((item) => (
-                    <label
-                      key={item.id}
-                      className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 transition ${journey.voyageIds.includes(item.id) ? "border-cyan-200/25 bg-cyan-200/[0.08]" : "border-white/10 bg-white/[0.025] hover:border-white/20"}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={journey.voyageIds.includes(item.id)}
-                        onChange={() => toggleVoyage(item.id)}
-                        className="size-4 accent-cyan-200"
-                      />
-                      <span className="grid size-6 place-items-center rounded-full bg-white/10 font-space text-[9px] text-white/60">
-                        {Math.max(1, journey.voyageIds.indexOf(item.id) + 1)}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-white/75">
-                          {item.title}
-                        </span>
-                        <span className="block font-space text-[8px] uppercase tracking-[0.12em] text-white/30">
-                          {item.period}
-                        </span>
-                      </span>
-                    </label>
-                  ))
-                ) : (
-                  <p className="rounded-xl border border-dashed border-white/15 px-4 py-5 text-center text-xs text-white/35">
-                    Publish a voyage before building a journey.
-                  </p>
-                )}
-              </div>
-            </div>
-            <label className="block">
-              <span className="font-space text-[9px] uppercase tracking-[0.15em] text-white/45">
-                Classroom target
-              </span>
-              <select defaultValue="classroom" className={selectClass}>
-                <option value="classroom">All cadets in this classroom</option>
-              </select>
-            </label>
+            )}
+            {imagineStatus === "ready" && (
+              <p className="rounded-xl border border-cyan-200/10 bg-cyan-200/[0.04] px-4 py-3 text-xs leading-5 text-cyan-50/65">
+                Curator filled this draft from your description. Review the
+                details, then optionally add exact sources before publishing.
+              </p>
+            )}
           </div>
         )}
         <div className="mt-7 flex flex-col gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
@@ -2821,13 +2650,13 @@ function CreationDialog({
                 ? "Saved. Closing the desk…"
                 : status === "error"
                   ? "Could not sync this draft."
-                  : kind === "voyage" && mode === "imagine"
+                  : mode === "imagine"
                     ? "Describe the voyage, then let Curator shape the details."
                     : !canSubmit
                       ? "Complete the required fields to continue."
                       : "Choose a draft or publish state."}
           </div>
-          {kind === "journey" || mode === "manual" ? (
+          {mode === "manual" ? (
             <div className="flex items-center justify-end gap-2">
               <button
                 type="button"
@@ -2853,12 +2682,11 @@ function CreationDialog({
   );
 }
 
+
 const inputClass =
   "mt-2 min-h-11 w-full rounded-xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm text-white outline-none placeholder:text-white/25 transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/10";
 const textareaClass =
   "mt-2 w-full resize-y rounded-xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm leading-6 text-white outline-none placeholder:text-white/25 transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/10";
-const selectClass =
-  "mt-2 min-h-11 w-full appearance-none rounded-xl border border-white/10 bg-[#101d23] px-4 py-3 text-sm text-white/75 outline-none transition focus:border-cyan-200/50 focus:ring-2 focus:ring-cyan-200/10";
 
 function Field({
   label,
@@ -2908,39 +2736,34 @@ function StudentView({
   ) => void;
   focusPostId?: string | null;
 }) {
-  const journeys = snapshot.journeys.filter(
-    (journey) =>
-      journey.status === "published" && journey.assignedTo === username,
-  );
-  const journey = journeys[0];
-  const journeyAssignment = snapshot.assignments.find(
-    (assignment) =>
-      assignment.journeyId === journey?.id &&
-      assignment.assignedTo === username,
-  );
   const assignedVoyages = snapshot.assignments
     .filter(
-      (assignment) => assignment.voyageId && assignment.assignedTo === username,
+      (assignment) =>
+        assignment.kind === "voyage" &&
+        assignment.voyageId &&
+        assignment.assignedTo === username,
     )
     .map((assignment) =>
       snapshot.voyages.find((voyage) => voyage.id === assignment.voyageId),
     )
     .filter((voyage): voyage is Voyage => Boolean(voyage));
-  const journeyVoyages = journey
-    ? journey.voyageIds
-        .map((id) => snapshot.voyages.find((voyage) => voyage.id === id))
-        .filter((voyage): voyage is Voyage => Boolean(voyage))
-    : [];
-  const orderedVoyages = [
-    ...journeyVoyages,
-    ...assignedVoyages.filter(
-      (voyage) =>
-        !journeyVoyages.some((journeyVoyage) => journeyVoyage.id === voyage.id),
-    ),
-  ];
+  const orderedVoyages = Array.from(
+    new Map(assignedVoyages.map((voyage) => [voyage.id, voyage])).values(),
+  );
   const readyVoyages = orderedVoyages.filter(
     (voyage) => voyage.status === "published",
   );
+  const overallProgress = readyVoyages.length
+    ? Math.round(
+        readyVoyages.reduce((sum, voyage) => {
+          const assignment = snapshot.assignments.find(
+            (item) =>
+              item.voyageId === voyage.id && item.assignedTo === username,
+          );
+          return sum + (assignment?.progress ?? 0);
+        }, 0) / readyVoyages.length,
+      )
+    : 0;
   const soloVoyages = snapshot.voyages.filter(
     (voyage) =>
       voyage.status === "published" &&
@@ -3056,7 +2879,7 @@ function StudentView({
               Progress
             </p>
             <p className="mt-1 font-display text-3xl text-white">
-              {journeyAssignment?.progress ?? 0}
+              {overallProgress}
               <span className="text-lg text-white/35">%</span>
             </p>
           </div>
@@ -3084,7 +2907,7 @@ function StudentView({
             emptyBody="Published class notes from assigned voyages will appear here."
           />
         </section>
-      ) : !journey && !orderedVoyages.length && !soloVoyages.length ? (
+      ) : !orderedVoyages.length && !soloVoyages.length ? (
         <div className="mt-12">
           <EmptyState
             title="No assignment in orbit"
@@ -3099,93 +2922,10 @@ function StudentView({
           >
             <SectionHeading
               eyebrow="Assigned Voyages"
-              title={journey ? "The route" : "Your voyages"}
+              title="Your voyages"
+              titleId="student-assignments-heading"
             />
-            {journey && (
-              <article className="rounded-2xl border border-orange-200/15 bg-gradient-to-br from-orange-200/[0.1] to-white/[0.025] p-5 sm:p-6">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-space text-[9px] uppercase tracking-[0.17em] text-orange-100/65">
-                      Journey · assigned by your Captain
-                    </p>
-                    <h2
-                      id="student-assignments-heading"
-                      className="mt-3 font-display text-2xl tracking-[-0.035em] text-white"
-                    >
-                      {journey.title}
-                    </h2>
-                  </div>
-                  <span className="font-space text-[10px] text-orange-100/75">
-                    {journeyAssignment?.progress ?? 0}%
-                  </span>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-white/45">
-                  {journey.description}
-                </p>
-                <div className="mt-5">
-                  <ProgressBar
-                    value={journeyAssignment?.progress ?? 0}
-                    tone="ember"
-                  />
-                </div>
-                <div className="mt-6 space-y-2">
-                  {orderedVoyages.map((voyage, index) => {
-                    const assignment = snapshot.assignments.find(
-                      (item) =>
-                        item.voyageId === voyage.id &&
-                        item.assignedTo === username,
-                    );
-                    const isSelected = voyage.id === selectedVoyage?.id;
-                    const isReady = voyage.status === "published";
-                    return (
-                      <button
-                        type="button"
-                        key={voyage.id}
-                        onClick={() => {
-                          if (isReady) setSelectedVoyageId(voyage.id);
-                        }}
-                        disabled={!isReady}
-                        className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-200/70 disabled:cursor-not-allowed disabled:opacity-60 ${isSelected ? "border-cyan-200/25 bg-cyan-200/[0.09]" : "border-white/10 bg-black/10 hover:border-white/20"}`}
-                      >
-                        <span
-                          className={`grid size-7 place-items-center rounded-full font-space text-[10px] ${assignment?.state === "complete" ? "bg-cyan-200 text-[#071014]" : isSelected ? "bg-orange-200 text-[#071014]" : "bg-white/10 text-white/55"}`}
-                        >
-                          {index + 1}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm text-white/80">
-                            {voyage.title}
-                          </span>
-                          <span className="block mt-0.5 font-space text-[8px] uppercase tracking-[0.12em] text-white/30">
-                            {!isReady
-                              ? "Planning"
-                              : assignment?.state === "complete"
-                                ? "Complete"
-                                : isSelected
-                                  ? "Current expedition · Ready"
-                                  : "Up next · Ready"}
-                          </span>
-                        </span>
-                        {assignment?.state === "complete" ? (
-                          <Check
-                            size={17}
-                            className="shrink-0 text-white"
-                            aria-label="Completed"
-                          />
-                        ) : (
-                          <ChevronRight
-                            size={14}
-                            className={`shrink-0 ${isSelected ? "text-cyan-100" : "text-white/25"}`}
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </article>
-            )}{" "}
-            {!journey &&
-              orderedVoyages.map((voyage) => (
+            {orderedVoyages.map((voyage) => (
                 <div
                   key={voyage.id}
                   className="flex w-full items-center gap-2 rounded-xl border border-white/10 bg-white/[0.035] p-2"
@@ -3558,7 +3298,7 @@ export default function NexusClient() {
     if (postParam) setFocusPostId(postParam);
   }
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [composerKind, setComposerKind] = useState<ComposerKind | null>(null);
+  const [composerOpen, setComposerOpen] = useState(false);
   const [assignmentEditor, setAssignmentEditor] =
     useState<AssignmentEditorData | null>(null);
   const [reportVoyage, setReportVoyage] = useState<Voyage | null>(null);
@@ -3661,22 +3401,13 @@ export default function NexusClient() {
     const voyage = assignment.voyageId
       ? snapshot.voyages.find((item) => item.id === assignment.voyageId)
       : undefined;
-    const journey = assignment.journeyId
-      ? snapshot.journeys.find((item) => item.id === assignment.journeyId)
-      : undefined;
-    const targetTitle =
-      voyage?.title ?? journey?.title ?? assignment.title ?? "Assignment";
+    const targetTitle = voyage?.title ?? assignment.title ?? "Assignment";
     setAssignmentEditor({
       id: assignment.assignmentId ?? assignment.id,
-      kind: assignment.kind,
       targetTitle,
       title: assignment.title ?? targetTitle,
-      status: assignment.status ?? voyage?.status ?? journey?.status ?? "draft",
-      lessonPlan:
-        assignment.lessonPlan ||
-        voyage?.lessonPlan ||
-        journey?.description ||
-        "",
+      status: assignment.status ?? voyage?.status ?? "draft",
+      lessonPlan: assignment.lessonPlan || voyage?.lessonPlan || "",
       sources: assignment.sources?.length
         ? assignment.sources
         : (voyage?.sources ?? []),
@@ -4092,59 +3823,25 @@ export default function NexusClient() {
     generationAbortRef.current.abort();
   };
 
-  const saveCreation = async (
-    kind: ComposerKind,
-    values: VoyageForm | JourneyForm,
-    status: PublishState,
-  ) => {
+  const saveCreation = async (values: VoyageForm, status: PublishState) => {
     if (!user) throw new Error("Sign in to save this draft.");
-    if (kind === "voyage" && status === "published") {
-      await generateAndPublishVoyage(values as VoyageForm);
+    if (status === "published") {
+      await generateAndPublishVoyage(values);
       return;
     }
     const next = cloneSnapshot(snapshot);
-    if (kind === "voyage") {
-      const form = values as VoyageForm;
-      next.voyages.unshift({
-        id: makeId("voyage"),
-        slug: makeId("voyage"),
-        title: form.title.trim(),
-        topic: form.topic.trim(),
-        period: form.period.trim(),
-        scene: form.scene.trim(),
-        lessonPlan: form.lessonPlan.trim(),
-        sources: form.sources,
-        status,
-        publishedAt:
-          status === "published"
-            ? new Date().toISOString().slice(0, 10)
-            : undefined,
-      });
-    } else {
-      const form = values as JourneyForm;
-      next.journeys.unshift({
-        id: makeId("journey"),
-        title: form.title.trim(),
-        description: form.description.trim(),
-        voyageIds: form.voyageIds,
-        status,
-        assignedTo: user.username,
-      });
-      next.assignments.unshift({
-        id: makeId("assignment"),
-        kind: "journey",
-        journeyId: next.journeys[0].id,
-        assignedTo: user.username,
-        state: "not-started",
-        progress: 0,
-        due: "Next week",
-      });
-    }
-    const synced = await commitSnapshot(
-      next,
-      status === "published" ? `publish-${kind}` : `save-${kind}`,
-      values,
-    );
+    next.voyages.unshift({
+      id: makeId("voyage"),
+      slug: makeId("voyage"),
+      title: values.title.trim(),
+      topic: values.topic.trim(),
+      period: values.period.trim(),
+      scene: values.scene.trim(),
+      lessonPlan: values.lessonPlan.trim(),
+      sources: values.sources,
+      status: "draft",
+    });
+    const synced = await commitSnapshot(next, "save-voyage", values);
     if (!synced) throw new Error("Could not sync this draft to the domain.");
   };
 
@@ -4192,7 +3889,7 @@ export default function NexusClient() {
         setSnapshot(cloneSnapshot(EMPTY_SNAPSHOT));
         setSnapshotStatus("idle");
         setSidebarOpen(false);
-        setComposerKind(null);
+        setComposerOpen(false);
         setAssignmentEditor(null);
         setSection("Overview");
         router.replace("/roll-call?view=returning");
@@ -4220,9 +3917,9 @@ export default function NexusClient() {
           }
           onTerminateGeneration={terminateVoyageGeneration}
           onRegenerateGeneration={regenerateVoyageGeneration}
-          onCreate={(kind) => {
+          onCreate={() => {
             setVoyageGeneration(null);
-            setComposerKind(kind);
+            setComposerOpen(true);
           }}
           onClassroomUpdate={(classroom) =>
             setSnapshot((current) => ({ ...current, classroom }))
@@ -4255,11 +3952,9 @@ export default function NexusClient() {
           }
         />
       ) : null}
-      {composerKind && (
+      {composerOpen && (
         <CreationDialog
-          kind={composerKind}
-          voyages={snapshot.voyages}
-          onClose={() => setComposerKind(null)}
+          onClose={() => setComposerOpen(false)}
           onSave={saveCreation}
         />
       )}

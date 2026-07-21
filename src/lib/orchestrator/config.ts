@@ -69,7 +69,7 @@ export const ORCHESTRATOR_CONFIG = {
   maxOutputTokens: 32000,
   /** Max plain-text characters returned per oversized Wikipedia section chunk. */
   pageChunkChars: 8000,
-  maxTries: 3,
+  maxTries: 5,
   /** Base delay for non-rate-limit retries; doubles each attempt. */
   retryBackoffMs: 1000,
   /** Cap for non-rate-limit retry delays. */
