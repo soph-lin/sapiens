@@ -92,6 +92,10 @@ type VoyageGeneration = {
   progress: number;
   status: VoyageGenerationStatus;
   entries: ProgressLogEntry[];
+  request: {
+    form: VoyageForm;
+    flourish: FlourishConfig;
+  };
   runSlug?: string;
   error?: string;
 };
@@ -669,11 +673,11 @@ function VoyageCard({
 function VoyageGenerationAssignmentCard({
   generation,
   onTerminate,
-  onImagine,
+  onRegenerate,
 }: {
   generation: VoyageGeneration;
   onTerminate: () => void;
-  onImagine: () => void;
+  onRegenerate: () => void;
 }) {
   const failed = generation.status === "failed";
   return (
@@ -718,10 +722,10 @@ function VoyageGenerationAssignmentCard({
         ) : (
           <button
             type="button"
-            onClick={onImagine}
+            onClick={onRegenerate}
             className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-cyan-200 px-3 text-xs font-semibold text-[#071014] transition hover:bg-cyan-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-100/80"
           >
-            Imagine <Sparkles size={13} />
+            Regenerate <Sparkles size={13} />
           </button>
         )}
       </div>
@@ -959,7 +963,7 @@ function TeacherView({
   onOpenAssignment,
   onOpenReport,
   onTerminateGeneration,
-  onImagineGeneration,
+  onRegenerateGeneration,
   generation,
   onToggleLike,
   onReply,
@@ -972,7 +976,7 @@ function TeacherView({
   onOpenAssignment: (assignmentId: string) => void;
   onOpenReport: (voyageId: string) => void;
   onTerminateGeneration: () => void;
-  onImagineGeneration: () => void;
+  onRegenerateGeneration: () => void;
   generation: VoyageGeneration | null;
   onToggleLike: (logId: string) => Promise<boolean>;
   onReply: (parentId: string, body: string) => Promise<boolean>;
@@ -1233,10 +1237,10 @@ function TeacherView({
                     <VoyageGenerationAssignmentCard
                       generation={pendingGeneration}
                       onTerminate={onTerminateGeneration}
-                      onImagine={onImagineGeneration}
+                      onRegenerate={onRegenerateGeneration}
                     />
                   ) : null}
-                  {snapshot.voyages.slice(0, 2).map((voyage) => {
+                  {snapshot.voyages.map((voyage) => {
                     const assignmentId = assignmentKeyForVoyage(
                       snapshot,
                       voyage.id,
@@ -1318,7 +1322,7 @@ function TeacherView({
               <VoyageGenerationAssignmentCard
                 generation={pendingGeneration}
                 onTerminate={onTerminateGeneration}
-                onImagine={onImagineGeneration}
+                onRegenerate={onRegenerateGeneration}
               />
             ) : null}
             {snapshot.voyages.map((voyage) => {
@@ -3678,13 +3682,27 @@ export default function NexusClient() {
     setAssignmentEditor(null);
   };
 
-  const generateAndPublishVoyage = async (form: VoyageForm) => {
-    const title = form.title.trim();
-    // Derive Restricted from approved domains — never trust a stale sourceMode alone.
-    const flourish: FlourishConfig = normalizeFlourishConfig({
-      ...sourcePolicyFromClassroom(snapshot.classroom),
-      approvedSourceUrls: form.sources,
-    });
+  const generateAndPublishVoyage = async (
+    form: VoyageForm,
+    replayFlourish?: FlourishConfig,
+  ) => {
+    const generationForm: VoyageForm = {
+      ...form,
+      sources: [...form.sources],
+    };
+    const title = generationForm.title.trim();
+    // Capture the resolved policy on the first attempt; regeneration replays it exactly.
+    const flourish: FlourishConfig = replayFlourish
+      ? {
+          ...replayFlourish,
+          approvedDomains: [...replayFlourish.approvedDomains],
+          approvedSourceUrls: [...replayFlourish.approvedSourceUrls],
+        }
+      : normalizeFlourishConfig({
+          ...sourcePolicyFromClassroom(snapshot.classroom),
+          approvedSourceUrls: generationForm.sources,
+        });
+    const request = { form: generationForm, flourish };
     const entries: ProgressLogEntry[] = [];
     let progress = 0;
     let runSlug: string | undefined;
@@ -3730,6 +3748,7 @@ export default function NexusClient() {
       progress: 0.02,
       status: "running",
       entries: [],
+      request,
     });
     addProgress(
       {
@@ -3745,7 +3764,7 @@ export default function NexusClient() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          steering: form.topic.trim(),
+          steering: generationForm.topic.trim(),
           storyConfig: flourish,
           progress: progressEntriesForStorage(entries),
         }),
@@ -3764,14 +3783,14 @@ export default function NexusClient() {
 
       const idea = {
         name: title,
-        historicalEvent: form.topic.trim(),
-        era: form.period.trim(),
-        region: form.period.trim(),
-        whyItFits: form.lessonPlan.trim(),
-        lessonPlan: form.lessonPlan.trim(),
-        plotDirection: form.scene.trim(),
-        sourceSearchTerms: `${form.topic.trim()} ${title}`,
-        sourceUrls: form.sources,
+        historicalEvent: generationForm.topic.trim(),
+        era: generationForm.period.trim(),
+        region: generationForm.period.trim(),
+        whyItFits: generationForm.lessonPlan.trim(),
+        lessonPlan: generationForm.lessonPlan.trim(),
+        plotDirection: generationForm.scene.trim(),
+        sourceSearchTerms: `${generationForm.topic.trim()} ${title}`,
+        sourceUrls: generationForm.sources,
       };
       const pipelineResponse = await fetch("/api/home/pipeline", {
         method: "POST",
@@ -3925,8 +3944,8 @@ export default function NexusClient() {
           storyJson: writerOutput.dialogue ?? writerOutput,
           synopsis: directorOutput.synopsis,
           runSlug,
-          steering: form.topic.trim(),
-          period: form.period.trim(),
+          steering: generationForm.topic.trim(),
+          period: generationForm.period.trim(),
           storyConfig: flourish,
           outputs,
           director: {
@@ -3960,11 +3979,11 @@ export default function NexusClient() {
           payload: {
             storyId,
             title,
-            topic: form.topic.trim(),
-            period: form.period.trim(),
-            scene: form.scene.trim(),
-            lessonPlan: form.lessonPlan.trim(),
-            sources: form.sources,
+            topic: generationForm.topic.trim(),
+            period: generationForm.period.trim(),
+            scene: generationForm.scene.trim(),
+            lessonPlan: generationForm.lessonPlan.trim(),
+            sources: generationForm.sources,
           },
         }),
         signal: abortController.signal,
@@ -4011,6 +4030,12 @@ export default function NexusClient() {
       if (generationAbortRef.current === abortController)
         generationAbortRef.current = null;
     }
+  };
+
+  const regenerateVoyageGeneration = () => {
+    if (voyageGeneration?.status !== "failed") return;
+    const { form, flourish } = voyageGeneration.request;
+    void generateAndPublishVoyage(form, flourish).catch(() => undefined);
   };
 
   const terminateVoyageGeneration = () => {
@@ -4143,10 +4168,7 @@ export default function NexusClient() {
             )
           }
           onTerminateGeneration={terminateVoyageGeneration}
-          onImagineGeneration={() => {
-            setVoyageGeneration(null);
-            setComposerKind("voyage");
-          }}
+          onRegenerateGeneration={regenerateVoyageGeneration}
           onCreate={(kind) => {
             setVoyageGeneration(null);
             setComposerKind(kind);

@@ -16,7 +16,7 @@ source that is not in `sources[]`.
 Return:
 
 - `dialogue`: JSON-encoded text containing one valid story JSON object matching the runtime schema below
-- `reportText`: Markdown with exactly these labeled sections: `## What was Fact?` and `## What was Fiction?`. Under Fact, list every factual claim used in the story and cite supporting source(s) with numbered footnote tags `<n>` (see Report footnotes below). Under Fiction, list every narrative embellishment, composite, ambiguity, compression, or invented detail; when a line distinguishes invented staging from an underlying sourced fact, cite that fact with `<n>`. If there is none, say so explicitly. Do not paste raw URLs or markdown links in `reportText`; URLs belong only in `sources[]` and `furtherReading[]`.
+- `reportText`: Markdown with exactly these labeled sections: `## What was Fact?` and `## What was Fiction?`. Under Fact, list every factual claim used in the story and cite supporting source(s) with numbered footnote tags `<n>` (see Report footnotes below). Under Fiction, provide a historical-fiction audit: list only story-world details that were invented, staged, compressed, combined, ambiguous, or dramatized for the sake of the narrative. When a line distinguishes invented staging from an underlying sourced fact, cite that fact with `<n>`. If there is none, say so explicitly. Do not paste raw URLs or markdown links in `reportText`; URLs belong only in `sources[]` and `furtherReading[]`.
 - `sources[]`: the approved sources actually used by the story. Each item must contain only `title`, `url`, and `kind` (`article` or `video`). Order this array to match footnote numbering: the first entry is `<1>`, the second is `<2>`, and so on.
 - `furtherReading[]`: copied from the approved follow-up set. Each item must contain only `title`, `url`, and `kind` (`article` or `video`).
 
@@ -26,7 +26,9 @@ decodes `dialogue`, then validates the full story and report before returning th
 The orchestrator derives character asset needs from the Director's cast and the validated
 dialogue after you finish. Do not return a `need_assets` field.
 
-Respect the Director plan's top-level `maxTurns` and `maxCharacters`: treat each non-ending dialogue line as one turn and never exceed `maxTurns`; do not introduce more than `maxCharacters` named characters. Keep branching shallow, and make most paths converge while allowing role- and state-dependent endings. Document every embellishment in the Fiction section. Do not treat atmosphere, personality turns, or invented transitions as facts; label them as fiction in the report.
+Respect the Director plan's top-level `maxTurns` and `maxCharacters`: treat each non-ending dialogue line as one turn and never exceed `maxTurns`; do not introduce more than `maxCharacters` named characters. Keep branching shallow, and make most paths converge while allowing role- and state-dependent endings. Document every narrative embellishment in the Fiction section. Do not treat atmosphere, personality turns, or invented transitions as facts; label them as fiction in the report.
+
+The Fiction section is about historical truthfulness, not a gameplay or implementation changelog. Include invented spoken lines, staged physical actions or reactions, imagined motives or relationships, fictional characterization, composite scenes, chronology/location compression, and endings that dramatize a possibility rather than record a documented outcome. If the story depicts a sourced event but adds invented staging, name both: state what is invented and cite the underlying sourced fact. Do not list player choices, prompts, scores, stats, flags, `asked_why`-style state, turn limits, branching structure, or other runtime abstractions unless the story itself makes them a historical claim. Do not call a framing device fiction merely because it is interactive; mention it only when it adds a fictional story-world event or detail.
 
 ## Report footnotes
 

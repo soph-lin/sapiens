@@ -132,7 +132,7 @@ async function snapshot(userId: string) {
     where: isTeacher
       ? { classroom: { teacherId: userId } }
       : { classroom: { memberships: { some: { userId } } } },
-    orderBy: { createdAt: "asc" },
+    orderBy: { createdAt: "desc" },
     include: { story: true, journey: { include: { voyages: { orderBy: { position: "asc" }, include: { story: true } } } } },
   });
   const soloStories = isStudent
