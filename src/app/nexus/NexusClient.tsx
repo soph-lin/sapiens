@@ -131,6 +131,22 @@ function textValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function sourceUrlsFromReport(value: unknown): string[] {
+  const report = asRecord(value);
+  const sources = report?.sources;
+  if (!Array.isArray(sources)) return [];
+  return Array.from(
+    new Set(
+      sources.flatMap((source) => {
+        if (typeof source === "string" && source.trim()) return [source.trim()];
+        const record = asRecord(source);
+        const url = record ? textValue(record.url) : null;
+        return url ? [url] : [];
+      }),
+    ),
+  );
+}
+
 function parseSseBlock(block: string): { event: string; data: unknown } | null {
   const event = block.match(/^event:\s*(.+)$/m)?.[1]?.trim();
   const data = block.match(/^data:\s*(.+)$/m)?.[1];
@@ -3909,6 +3925,9 @@ export default function NexusClient() {
       const needAssets = asRecord(writerOutput?.need_assets);
       if (!researcherOutput || !directorOutput || !writerOutput || !needAssets)
         throw new Error("Pipeline outputs were incomplete.");
+      const reportSources = sourceUrlsFromReport(writerOutput.report);
+      if (!reportSources.length)
+        throw new Error("The generated voyage report did not include any sources.");
       addProgress(
         {
           agent: "system",
@@ -3983,7 +4002,7 @@ export default function NexusClient() {
             period: generationForm.period.trim(),
             scene: generationForm.scene.trim(),
             lessonPlan: generationForm.lessonPlan.trim(),
-            sources: generationForm.sources,
+            sources: reportSources,
           },
         }),
         signal: abortController.signal,
