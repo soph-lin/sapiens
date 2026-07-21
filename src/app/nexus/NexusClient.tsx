@@ -3871,8 +3871,17 @@ export default function NexusClient() {
       }
       process(decoder.decode());
       if (buffer.trim()) process(`\n\n${buffer}`);
+      if (abortController.signal.aborted) {
+        throw new Error(
+          generationTerminationRef.current
+            ? "Voyage generation terminated by the Captain."
+            : "Voyage generation stream was aborted before completion.",
+        );
+      }
       if (!outputs)
-        throw new Error("Voyage pipeline completed without story outputs.");
+        throw new Error(
+          "Voyage pipeline stream ended before the story result was received.",
+        );
       await persistRun({ outputs });
 
       const researcherOutput = asRecord(outputs.researcher);

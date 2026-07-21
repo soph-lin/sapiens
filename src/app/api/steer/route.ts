@@ -23,6 +23,9 @@ import { normalizeFlourishConfig, sourcePolicyFromClassroom, type FlourishConfig
 import { getDemoUserFromRequest } from "@/lib/demo-auth";
 
 export const runtime = "nodejs";
+// Individual agent runs can be dominated by the Writer's large structured
+// response. Match the full pipeline's extended Vercel execution window.
+export const maxDuration = 1800;
 
 function objectInput(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "string" || !value.trim()) {

@@ -43,6 +43,9 @@ Definitions for clients: [src/lib/providers](../../src/lib/providers)
 ## Runs
 
 - `/steer` streams individual agents or the full pipeline.
+- The story pipeline and individual `/steer` agent route each opt into Vercel's
+  30 min (1800 sec) per-function duration so long Writer generations have adequate
+  execution headroom on supported Pro deployments. This requires Vercel Pro.
 - `StoryGenRun` stores the raw free-text `steering` request, the cleaned Researcher
   `topic`, Curator output, config, per-agent outputs, progress, usage, and status for
   replay and inspection. Runs are listed at `/voyages` and displayed

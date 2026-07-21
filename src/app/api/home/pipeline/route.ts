@@ -21,6 +21,10 @@ import { getDemoUserFromRequest } from "@/lib/demo-auth";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
+// Story generation can spend several minutes in each model-backed stage.
+// Use Vercel Pro's extended per-function duration so the full pipeline has
+// enough headroom to finish without hitting the platform execution limit.
+export const maxDuration = 1800;
 
 type PipelineBody = {
   stage?: "curate" | "story";
@@ -118,7 +122,17 @@ export async function POST(request: Request) {
       const progress: AgentProgressEvent[] = [];
       const usage = new UsageCollector();
       const assets: GeneratedAssetEvent[] = [];
-      const emit = (event: string, data: unknown) => controller.enqueue(sse(event, data, encoder));
+      const emit = (event: string, data: unknown) => {
+        // A browser can leave the page while an agent is still running. In
+        // that case enqueue/close may throw; do not mask the original agent
+        // error with a second stream-controller error.
+        try {
+          controller.enqueue(sse(event, data, encoder));
+          return true;
+        } catch {
+          return false;
+        }
+      };
       const emitProgress = (event: AgentProgressEvent) => {
         progress.push(event);
         emit("progress", event);
@@ -152,7 +166,7 @@ export async function POST(request: Request) {
           const options = {
             usage,
             progress,
-            onProgress: (event: AgentProgressEvent) => emit("progress", event),
+            onProgress: (event: AgentProgressEvent) => emitProgress(event),
             onAsset: (event: GeneratedAssetEvent) => {
               assets.push(event);
               emit("asset", normalizeAssets(event));
@@ -210,7 +224,11 @@ export async function POST(request: Request) {
             usage: usage.report(),
           });
         } finally {
-          controller.close();
+          try {
+            controller.close();
+          } catch {
+            // The client may have disconnected while the model was running.
+          }
         }
       })();
     },
